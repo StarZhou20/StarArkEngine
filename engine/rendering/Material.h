@@ -33,6 +33,19 @@ public:
     void SetShininess(float s) { shininess_ = s; }
     float GetShininess() const { return shininess_; }
 
+    // --- PBR properties ---
+    void SetMetallic(float m) { metallic_ = m; }
+    float GetMetallic() const { return metallic_; }
+
+    void SetRoughness(float r) { roughness_ = r; }
+    float GetRoughness() const { return roughness_; }
+
+    void SetAO(float ao) { ao_ = ao; }
+    float GetAO() const { return ao_; }
+
+    void SetPBR(bool enabled) { pbrEnabled_ = enabled; }
+    bool IsPBR() const { return pbrEnabled_; }
+
     // --- Texture ---
     void SetDiffuseTexture(std::shared_ptr<RHITexture> tex) { diffuseTex_ = std::move(tex); }
     RHITexture* GetDiffuseTexture() const { return diffuseTex_.get(); }
@@ -47,6 +60,12 @@ private:
     glm::vec4 color_{1.0f, 1.0f, 1.0f, 1.0f};
     glm::vec3 specular_{0.5f};
     float shininess_ = 32.0f;
+
+    // PBR
+    float metallic_ = 0.0f;
+    float roughness_ = 0.5f;
+    float ao_ = 1.0f;
+    bool pbrEnabled_ = false;
 };
 
 } // namespace ark

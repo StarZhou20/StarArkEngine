@@ -29,7 +29,22 @@ FetchContent_Declare(spdlog
     URL file://${CMAKE_SOURCE_DIR}/deps_cache/spdlog-1.15.0.zip
 )
 
-FetchContent_MakeAvailable(glfw glm glew-cmake spdlog)
+# Assimp: only import OBJ / FBX / glTF to keep build small
+set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
+set(ASSIMP_NO_EXPORT ON CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ALL_EXPORTERS_BY_DEFAULT OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_OBJ_IMPORTER ON CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_FBX_IMPORTER ON CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_GLTF_IMPORTER ON CACHE BOOL "" FORCE)
+FetchContent_Declare(assimp
+    URL file://${CMAKE_SOURCE_DIR}/deps_cache/assimp-5.4.3.zip
+)
+
+FetchContent_MakeAvailable(glfw glm glew-cmake spdlog assimp)
 
 # glm-light extracts flat (glm-src/glm.hpp). Create a wrapper directory
 # with a "glm" junction so #include <glm/glm.hpp> works.

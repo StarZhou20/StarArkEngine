@@ -4,6 +4,8 @@
 #include "engine/rhi/RHICommandBuffer.h"
 #include "engine/rhi/RHIPipeline.h"
 #include <memory>
+#include <unordered_map>
+#include <cstdint>
 
 namespace ark {
 
@@ -30,8 +32,19 @@ private:
     void SetLightUniforms(RHIShader* shader, Camera* camera);
     void DrawMeshRenderer(MeshRenderer* renderer, Camera* camera);
 
+    /// Look up or create a cached pipeline for the given desc.
+    RHIPipeline* GetOrCreatePipeline(const PipelineDesc& desc);
+
     RHIDevice* device_;
     std::unique_ptr<RHICommandBuffer> cmdBuffer_;
+
+    // Pipeline cache: keyed by hash of PipelineDesc fields
+    struct PipelineCacheEntry {
+        std::unique_ptr<RHIPipeline> pipeline;
+    };
+    std::unordered_map<uint64_t, PipelineCacheEntry> pipelineCache_;
+
+    static uint64_t HashPipelineDesc(const PipelineDesc& desc);
 };
 
 } // namespace ark

@@ -37,6 +37,7 @@ public:
     // --- Primitive generators ---
     static std::unique_ptr<Mesh> CreateCube();
     static std::unique_ptr<Mesh> CreatePlane(float size = 10.0f);
+    static std::unique_ptr<Mesh> CreateSphere(int sectorCount = 36, int stackCount = 18);
 
 private:
     VertexLayout layout_;

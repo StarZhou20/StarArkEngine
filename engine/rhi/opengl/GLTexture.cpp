@@ -34,8 +34,8 @@ void GLTexture::Upload(int width, int height, int channels, const uint8_t* data)
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void GLTexture::Bind(GLuint unit) const {
-    glActiveTexture(GL_TEXTURE0 + unit);
+void GLTexture::Bind(int unit) const {
+    glActiveTexture(GL_TEXTURE0 + static_cast<GLenum>(unit));
     glBindTexture(GL_TEXTURE_2D, handle_);
 }
 

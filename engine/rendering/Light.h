@@ -26,6 +26,12 @@ public:
     // --- Point/Spot attenuation ---
     float GetRange() const { return range_; }
     void SetRange(float r) { range_ = r; }
+    float GetConstant() const { return constant_; }
+    void SetConstant(float c) { constant_ = c; }
+    float GetLinear() const { return linear_; }
+    void SetLinear(float l) { linear_ = l; }
+    float GetQuadratic() const { return quadratic_; }
+    void SetQuadratic(float q) { quadratic_ = q; }
 
     // --- Spot light ---
     float GetSpotInnerAngle() const { return spotInnerAngle_; }
@@ -49,6 +55,9 @@ private:
     glm::vec3 color_{1.0f};
     float intensity_ = 1.0f;
     float range_ = 10.0f;
+    float constant_ = 1.0f;
+    float linear_ = 0.09f;
+    float quadratic_ = 0.032f;
     float spotInnerAngle_ = 12.5f;
     float spotOuterAngle_ = 17.5f;
     glm::vec3 ambient_{0.1f};

@@ -11,7 +11,9 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/trigonometric.hpp>
 #include <algorithm>
+#include <string>
 #include <vector>
 
 namespace ark {
@@ -56,6 +58,9 @@ void ForwardRenderer::RenderCamera(Camera* camera, Window* window) {
 
     // Gather visible MeshRenderers
     auto& allRenderers = MeshRenderer::GetAllRenderers();
+    std::vector<MeshRenderer*> visible;
+    visible.reserve(allRenderers.size());
+
     for (auto* renderer : allRenderers) {
         auto* owner = renderer->GetOwner();
         if (!owner || owner->IsDestroyed() || !owner->IsActiveInHierarchy() || !renderer->IsEnabled()) {
@@ -64,44 +69,89 @@ void ForwardRenderer::RenderCamera(Camera* camera, Window* window) {
         if (!renderer->GetMesh() || !renderer->GetMaterial() || !renderer->GetMaterial()->GetShader()) {
             continue;
         }
+        visible.push_back(renderer);
+    }
+
+    // Sort by shader pointer, then material pointer (F5: minimize state switches)
+    std::sort(visible.begin(), visible.end(),
+        [](const MeshRenderer* a, const MeshRenderer* b) {
+            auto* shaderA = a->GetMaterial()->GetShader();
+            auto* shaderB = b->GetMaterial()->GetShader();
+            if (shaderA != shaderB) return shaderA < shaderB;
+            return a->GetMaterial() < b->GetMaterial();
+        });
+
+    for (auto* renderer : visible) {
         DrawMeshRenderer(renderer, camera);
     }
 }
 
 void ForwardRenderer::SetLightUniforms(RHIShader* shader, Camera* camera) {
+    constexpr int MAX_DIR   = 4;
+    constexpr int MAX_POINT = 8;
+    constexpr int MAX_SPOT  = 4;
+
     auto& allLights = Light::GetAllLights();
-    int dirCount = 0;
+    int dirCount = 0, pointCount = 0, spotCount = 0;
 
     for (auto* light : allLights) {
         auto* owner = light->GetOwner();
-        if (!owner || owner->IsDestroyed() || !owner->IsActiveInHierarchy() || !light->IsEnabled()) {
+        if (!owner || owner->IsDestroyed() || !owner->IsActiveInHierarchy() || !light->IsEnabled())
             continue;
-        }
 
-        if (light->GetType() == Light::Type::Directional && dirCount == 0) {
-            // Use transform's forward direction (negative Z in local space)
-            glm::mat4 worldMat = const_cast<Transform&>(owner->GetTransform()).GetWorldMatrix();
-            glm::vec3 forward = -glm::normalize(glm::vec3(worldMat[2])); // -Z axis
+        glm::mat4 worldMat = const_cast<Transform&>(owner->GetTransform()).GetWorldMatrix();
 
+        if (light->GetType() == Light::Type::Directional && dirCount < MAX_DIR) {
+            std::string prefix = "uDirLights[" + std::to_string(dirCount) + "].";
+
+            glm::vec3 forward = -glm::normalize(glm::vec3(worldMat[2]));
             glm::vec3 lightColor = light->GetColor() * light->GetIntensity();
             glm::vec3 ambient = light->GetAmbient();
 
-            shader->SetUniformVec3("uLight.direction", glm::value_ptr(forward));
-            shader->SetUniformVec3("uLight.color", glm::value_ptr(lightColor));
-            shader->SetUniformVec3("uLight.ambient", glm::value_ptr(ambient));
+            shader->SetUniformVec3((prefix + "direction").c_str(), glm::value_ptr(forward));
+            shader->SetUniformVec3((prefix + "color").c_str(), glm::value_ptr(lightColor));
+            shader->SetUniformVec3((prefix + "ambient").c_str(), glm::value_ptr(ambient));
             dirCount++;
+        }
+        else if (light->GetType() == Light::Type::Point && pointCount < MAX_POINT) {
+            std::string prefix = "uPointLights[" + std::to_string(pointCount) + "].";
+
+            glm::vec3 pos = glm::vec3(worldMat[3]);
+            glm::vec3 lightColor = light->GetColor() * light->GetIntensity();
+
+            shader->SetUniformVec3((prefix + "position").c_str(), glm::value_ptr(pos));
+            shader->SetUniformVec3((prefix + "color").c_str(), glm::value_ptr(lightColor));
+            shader->SetUniformFloat((prefix + "constant").c_str(), light->GetConstant());
+            shader->SetUniformFloat((prefix + "linear").c_str(), light->GetLinear());
+            shader->SetUniformFloat((prefix + "quadratic").c_str(), light->GetQuadratic());
+            shader->SetUniformFloat((prefix + "range").c_str(), light->GetRange());
+            pointCount++;
+        }
+        else if (light->GetType() == Light::Type::Spot && spotCount < MAX_SPOT) {
+            std::string prefix = "uSpotLights[" + std::to_string(spotCount) + "].";
+
+            glm::vec3 pos = glm::vec3(worldMat[3]);
+            glm::vec3 forward = -glm::normalize(glm::vec3(worldMat[2]));
+            glm::vec3 lightColor = light->GetColor() * light->GetIntensity();
+
+            shader->SetUniformVec3((prefix + "position").c_str(), glm::value_ptr(pos));
+            shader->SetUniformVec3((prefix + "direction").c_str(), glm::value_ptr(forward));
+            shader->SetUniformVec3((prefix + "color").c_str(), glm::value_ptr(lightColor));
+            shader->SetUniformFloat((prefix + "constant").c_str(), light->GetConstant());
+            shader->SetUniformFloat((prefix + "linear").c_str(), light->GetLinear());
+            shader->SetUniformFloat((prefix + "quadratic").c_str(), light->GetQuadratic());
+            shader->SetUniformFloat((prefix + "range").c_str(), light->GetRange());
+            shader->SetUniformFloat((prefix + "innerCutoff").c_str(),
+                glm::cos(glm::radians(light->GetSpotInnerAngle())));
+            shader->SetUniformFloat((prefix + "outerCutoff").c_str(),
+                glm::cos(glm::radians(light->GetSpotOuterAngle())));
+            spotCount++;
         }
     }
 
-    // If no directional light, set defaults
-    if (dirCount == 0) {
-        glm::vec3 defaultDir(0.0f, -1.0f, 0.0f);
-        glm::vec3 defaultColor(1.0f);
-        glm::vec3 defaultAmbient(0.2f);
-        shader->SetUniformVec3("uLight.direction", glm::value_ptr(defaultDir));
-        shader->SetUniformVec3("uLight.color", glm::value_ptr(defaultColor));
-        shader->SetUniformVec3("uLight.ambient", glm::value_ptr(defaultAmbient));
-    }
+    shader->SetUniformInt("uNumDirLights", dirCount);
+    shader->SetUniformInt("uNumPointLights", pointCount);
+    shader->SetUniformInt("uNumSpotLights", spotCount);
 
     // Camera position for specular
     glm::vec3 camPos = camera->GetOwner()->GetTransform().GetWorldPosition();
@@ -114,7 +164,7 @@ void ForwardRenderer::DrawMeshRenderer(MeshRenderer* renderer, Camera* camera) {
     auto* shader = material->GetShader();
     auto* owner = renderer->GetOwner();
 
-    // Create pipeline on-the-fly (could be cached, but simple for now)
+    // Look up or create cached pipeline (F6)
     PipelineDesc desc;
     desc.shader = shader;
     desc.vertexLayout = mesh->GetVertexLayout();
@@ -122,7 +172,7 @@ void ForwardRenderer::DrawMeshRenderer(MeshRenderer* renderer, Camera* camera) {
     desc.depthTest = true;
     desc.depthWrite = true;
 
-    auto pipeline = device_->CreatePipeline(desc);
+    auto* pipeline = GetOrCreatePipeline(desc);
 
     cmdBuffer_->Begin();
 
@@ -145,7 +195,7 @@ void ForwardRenderer::DrawMeshRenderer(MeshRenderer* renderer, Camera* camera) {
     material->Bind();
 
     // Bind pipeline + mesh + draw
-    cmdBuffer_->BindPipeline(pipeline.get());
+    cmdBuffer_->BindPipeline(pipeline);
     cmdBuffer_->BindVertexBuffer(mesh->GetVertexBuffer());
 
     if (mesh->HasIndices()) {
@@ -157,6 +207,35 @@ void ForwardRenderer::DrawMeshRenderer(MeshRenderer* renderer, Camera* camera) {
 
     cmdBuffer_->End();
     cmdBuffer_->Submit();
+}
+
+uint64_t ForwardRenderer::HashPipelineDesc(const PipelineDesc& desc) {
+    // FNV-1a style hash combining the relevant pipeline fields
+    uint64_t hash = 14695981039346656037ULL;
+    auto combine = [&](uint64_t val) {
+        hash ^= val;
+        hash *= 1099511628211ULL;
+    };
+    combine(reinterpret_cast<uintptr_t>(desc.shader));
+    combine(static_cast<uint64_t>(desc.vertexLayout.stride));
+    combine(static_cast<uint64_t>(desc.vertexLayout.attributes.size()));
+    combine(static_cast<uint64_t>(desc.topology));
+    combine(static_cast<uint64_t>(desc.depthTest));
+    combine(static_cast<uint64_t>(desc.depthWrite));
+    combine(static_cast<uint64_t>(desc.blendEnabled));
+    return hash;
+}
+
+RHIPipeline* ForwardRenderer::GetOrCreatePipeline(const PipelineDesc& desc) {
+    uint64_t key = HashPipelineDesc(desc);
+    auto it = pipelineCache_.find(key);
+    if (it != pipelineCache_.end()) {
+        return it->second.pipeline.get();
+    }
+    auto pipeline = device_->CreatePipeline(desc);
+    auto* raw = pipeline.get();
+    pipelineCache_[key] = PipelineCacheEntry{std::move(pipeline)};
+    return raw;
 }
 
 } // namespace ark

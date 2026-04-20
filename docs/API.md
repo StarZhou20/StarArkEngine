@@ -23,6 +23,10 @@
   - [4.4 Material](#44-material)
   - [4.5 MeshRenderer](#45-meshrenderer)
   - [4.6 ForwardRenderer](#46-forwardrenderer)
+  - [4.7 OrbitCamera](#47-orbitcamera)
+  - [4.8 TextureLoader](#48-textureloader)
+  - [4.9 ModelLoader](#49-modelloader)
+  - [4.10 ShaderSources](#410-shadersources)
 - [5. 平台层](#5-平台层)
   - [5.1 Window](#51-window)
   - [5.2 Input](#52-input)
@@ -75,10 +79,10 @@
 2. `Time::Update()`
 3. 窗口 resize 检查 → 更新所有 Camera 宽高比
 4. `DrainPendingObjects()` — 初始化本帧新建的对象（循环直到无新增）
-5. Tick 持久对象（`persistentList_`）
-6. Tick 场景对象（`AScene::objectList_`）
-7. PostTick 持久对象
-8. PostTick 场景对象
+5. Loop 持久对象（`persistentList_`）
+6. Loop 场景对象（`AScene::objectList_`）
+7. PostLoop 持久对象
+8. PostLoop 场景对象
 9. `AScene::Tick(dt)` — 场景级逻辑
 10. 更新脏 Transform 的世界矩阵
 11. `ForwardRenderer::RenderFrame()` — 渲染所有相机
@@ -154,10 +158,11 @@ public:
 
 | 方法 | 调用时机 | 说明 |
 |------|----------|------|
+| `PreInit()` | DrainPendingObjects 期间，Init 之前 | 最早的初始化阶段，适合设置基本属性 |
 | `Init()` | DrainPendingObjects 期间 | 初始化（创建组件、设置 Transform） |
 | `PostInit()` | Init 之后 | 可在此安全引用其他已初始化的对象 |
-| `Tick(float dt)` | 每帧调用 | 逻辑更新 |
-| `PostTick(float dt)` | Tick 之后 | 延后逻辑（如相机跟随） |
+| `Loop(float dt)` | 每帧调用 | 逻辑更新 |
+| `PostLoop(float dt)` | Loop 之后 | 延后逻辑（如相机跟随） |
 | `OnDestroy()` | Destroy() 被调用时 | 清理自定义资源 |
 
 #### 身份 & 状态
@@ -207,8 +212,11 @@ public:
 |------|------|
 | `OnAttach()` | 组件被添加到对象后调用 |
 | `OnDetach()` | 组件被移除或对象销毁时调用 |
-| `Tick(float dt)` | 每帧更新（仅当 enabled） |
-| `PostTick(float dt)` | Tick 后更新（仅当 enabled） |
+| `PreInit()` | OnAttach 之后、Init 之前调用 |
+| `Init()` | PreInit 之后调用 |
+| `PostInit()` | Init 之后调用 |
+| `Loop(float dt)` | 每帧更新（仅当 enabled） |
+| `PostLoop(float dt)` | Loop 后更新（仅当 enabled） |
 
 #### 公开方法
 
@@ -223,7 +231,7 @@ public:
 ```cpp
 class Rotator : public ark::AComponent {
 public:
-    void Tick(float dt) override {
+    void Loop(float dt) override {
         auto& t = GetOwner()->GetTransform();
         angle_ += speed_ * dt;
         t.SetLocalRotation(glm::angleAxis(angle_, glm::vec3(0, 1, 0)));
@@ -354,7 +362,7 @@ enum class Light::Type { Directional, Point, Spot };
 |------|--------|------|
 | `Light::GetAllLights()` | `const vector<Light*>&` | 获取所有已注册光源 |
 
-> **当前限制**: ForwardRenderer 仅使用第一个方向光，尚未支持多光源和点光/聚光灯渲染。
+> **当前限制**: ~~ForwardRenderer 仅使用第一个方向光，尚未支持多光源和点光/聚光灯渲染~~ → 已支持多光源（4 方向光 + 8 点光 + 4 聚光灯）。
 
 ### 4.3 Mesh
 
@@ -388,8 +396,9 @@ enum class Light::Type { Directional, Point, Spot };
 |------|--------|------|
 | `Mesh::CreateCube()` | `unique_ptr<Mesh>` | 创建单位立方体（24 顶点、36 索引、含法线和 UV） |
 | `Mesh::CreatePlane(float size = 10.0f)` | `unique_ptr<Mesh>` | 创建地面平面 |
+| `Mesh::CreateSphere(int sectors = 36, int stacks = 18)` | `unique_ptr<Mesh>` | 创建 UV 球体（Y-up，含法线和 UV） |
 
-> **注意**: `CreateCube()` / `CreatePlane()` 只创建 CPU 端数据，需调用 `Upload(device)` 上传到 GPU。
+> **注意**: `CreateCube()` / `CreatePlane()` / `CreateSphere()` 只创建 CPU 端数据，需调用 `Upload(device)` 上传到 GPU。
 
 ### 4.4 Material
 
@@ -409,6 +418,14 @@ enum class Light::Type { Directional, Point, Spot };
 | `GetSpecular()` | `const glm::vec3&` | 获取高光颜色 |
 | `SetShininess(float)` | `void` | 设置高光指数 |
 | `GetShininess()` | `float` | 获取高光指数 |
+| `SetMetallic(float)` | `void` | 设置金属度 (PBR) |
+| `GetMetallic()` | `float` | 获取金属度 |
+| `SetRoughness(float)` | `void` | 设置粗糙度 (PBR) |
+| `GetRoughness()` | `float` | 获取粗糙度 |
+| `SetAO(float)` | `void` | 设置环境光遮蔽 (PBR) |
+| `GetAO()` | `float` | 获取环境光遮蔽 |
+| `SetPBR(bool)` | `void` | 启用/禁用 PBR 模式 |
+| `IsPBR()` | `bool` | 是否启用 PBR |
 | `SetDiffuseTexture(shared_ptr<RHITexture>)` | `void` | 设置漫反射纹理 |
 | `GetDiffuseTexture()` | `RHITexture*` | 获取漫反射纹理 |
 
@@ -416,7 +433,7 @@ enum class Light::Type { Directional, Point, Spot };
 
 | 方法 | 说明 |
 |------|------|
-| `Bind()` | 将材质参数绑定到 shader uniform（`uMaterial.color` / `uMaterial.specular` / `uMaterial.shininess` / `uMaterial.hasDiffuseTex`） |
+| `Bind()` | 将材质参数绑定到 shader uniform（`uMaterial.color` / `uMaterial.specular` / `uMaterial.shininess` / `uMaterial.metallic` / `uMaterial.roughness` / `uMaterial.ao` / `uMaterial.hasDiffuseTex`），自动绑定漫反射纹理到 unit 0 |
 
 ### 4.5 MeshRenderer
 
@@ -446,7 +463,12 @@ enum class Light::Type { Directional, Point, Spot };
 | 方法 | 说明 |
 |------|------|
 | `ForwardRenderer(RHIDevice*)` | 构造（传入 RHI 设备） |
-| `RenderFrame(Window*)` | 渲染一帧：遍历所有相机（按优先级排序）→ 清屏 → 收集 MeshRenderer → 设置光照/MVP → 绘制 |
+| `RenderFrame(Window*)` | 渲染一帧：遍历所有相机（按优先级排序）→ 清屏 → 收集 MeshRenderer → **按 shader/material 排序** → 设置光照/MVP → 绘制 |
+
+#### 内部优化
+
+- **Pipeline 缓存**: 使用 FNV-1a 哈希缓存 `(shader, vertexLayout, topology, depth, blend)` → `RHIPipeline*`，避免每帧重建 VAO
+- **渲染排序**: 可见 MeshRenderer 先按 shader 指针、再按 material 指针排序，减少 GPU 状态切换
 
 #### Shader Uniform 约定
 
@@ -461,10 +483,102 @@ ForwardRenderer 在绘制时设置以下 uniform：
 | `uLight.direction` | `vec3` | 光源方向（从 Transform 的 forward 计算） |
 | `uLight.color` | `vec3` | 光源颜色 × 强度 |
 | `uLight.ambient` | `vec3` | 环境光 |
+
+> **注意**: 以上单光源 uniform 已废弃，新版本使用多光源 uniform 数组（`uDirLights[i]`、`uPointLights[i]`、`uSpotLights[i]` + `uNumDirLights`、`uNumPointLights`、`uNumSpotLights`）。详见 `engine/rendering/ShaderSources.h`。
 | `uMaterial.color` | `vec4` | 由 `Material::Bind()` 设置 |
 | `uMaterial.specular` | `vec3` | 由 `Material::Bind()` 设置 |
 | `uMaterial.shininess` | `float` | 由 `Material::Bind()` 设置 |
 | `uMaterial.hasDiffuseTex` | `int` | 由 `Material::Bind()` 设置 |
+
+### 4.7 OrbitCamera
+
+**头文件**: `#include "engine/rendering/OrbitCamera.h"`
+
+轨道相机控制器组件，围绕目标点旋转/缩放/平移。需配合 `Camera` 组件一起使用。
+
+#### 配置方法
+
+| 方法 | 返回值 | 说明 |
+|------|--------|------|
+| `SetTarget(const glm::vec3&)` | `void` | 设置观察目标点 |
+| `SetDistance(float d)` | `void` | 设置与目标的距离 |
+| `SetYaw(float deg)` | `void` | 设置水平偏航角（度） |
+| `SetPitch(float deg)` | `void` | 设置垂直俯仰角（度） |
+| `SetSensitivity(float s)` | `void` | 设置旋转灵敏度 |
+| `SetZoomSpeed(float s)` | `void` | 设置滚轮缩放速度 |
+| `SetPanSpeed(float s)` | `void` | 设置平移速度 |
+| `SetDistRange(float min, float max)` | `void` | 设置缩放距离范围 |
+| `SetPitchRange(float min, float max)` | `void` | 设置俯仰角范围（度） |
+
+#### 交互
+
+- **右键拖拽**: 旋转（yaw/pitch）
+- **滚轮**: 缩放（前进/后退）
+- **中键拖拽**: 平移目标点
+
+### 4.8 TextureLoader
+
+**头文件**: `#include "engine/rendering/TextureLoader.h"`
+
+从图片文件加载纹理到 GPU（基于 stb_image）。
+
+| 方法 | 返回值 | 说明 |
+|------|--------|------|
+| `TextureLoader::Load(RHIDevice* device, const string& filepath)` | `shared_ptr<RHITexture>` | 加载图片文件（PNG/JPG/BMP/TGA），返回 GPU 纹理。失败返回 nullptr |
+
+> **注意**: 自动翻转 Y 轴以适配 OpenGL 坐标系。
+
+### 4.9 ModelLoader
+
+**头文件**: `#include "engine/rendering/ModelLoader.h"`
+
+从 3D 模型文件（OBJ/FBX/glTF）加载网格和材质（基于 Assimp）。
+
+#### ModelNode 结构
+
+```cpp
+struct ModelNode {
+    std::shared_ptr<Mesh> mesh;
+    std::shared_ptr<Material> material;
+};
+```
+
+#### 静态方法
+
+| 方法 | 返回值 | 说明 |
+|------|--------|------|
+| `ModelLoader::Load(RHIDevice* device, shared_ptr<RHIShader> shader, const string& filepath)` | `vector<ModelNode>` | 加载模型文件，返回所有子网格+材质。失败返回空 vector |
+
+#### 自动处理
+
+- 三角化（aiProcess_Triangulate）
+- 自动生成法线（aiProcess_GenNormals）
+- 翻转 UV（aiProcess_FlipUVs）
+- 计算切线空间（aiProcess_CalcTangentSpace）
+- 漫反射颜色、高光颜色、光泽度自动提取
+- 漫反射纹理路径相对模型文件目录自动解析
+
+### 4.10 ShaderSources
+
+**头文件**: `#include "engine/rendering/ShaderSources.h"`
+
+引擎内置 GLSL 450 着色器源码字符串。
+
+| 常量 | 说明 |
+|------|------|
+| `ark::kPhongVS` | Blinn-Phong 顶点着色器 |
+| `ark::kPhongFS` | Blinn-Phong 片段着色器（多光源） |
+| `ark::kPBR_VS` | PBR Cook-Torrance 顶点着色器 |
+| `ark::kPBR_FS` | PBR Cook-Torrance 片段着色器（多光源 + HDR 色调映射 + gamma 校正） |
+
+#### 共享 uniform 接口
+
+所有内置着色器共享以下 uniform layout：
+
+- `uMVP` (mat4), `uModel` (mat4), `uNormalMatrix` (mat4), `uCameraPos` (vec3)
+- `uMaterial.*` (color, specular, shininess, metallic, roughness, ao, hasDiffuseTex)
+- `uDiffuseTex` (sampler2D, unit 0)
+- `uDirLights[MAX_DIR_LIGHTS]`, `uPointLights[MAX_POINT_LIGHTS]`, `uSpotLights[MAX_SPOT_LIGHTS]`
 
 ---
 
@@ -503,6 +617,11 @@ GLFW 窗口封装，创建 OpenGL 4.5 Core 上下文。
 | `Input::GetKeyUp(int keyCode)` | `bool` | 按键是否刚释放（本帧） |
 | `Input::GetMouseButton(int button)` | `bool` | 鼠标按钮是否按住 |
 | `Input::GetMousePosition(double& x, double& y)` | `void` | 获取鼠标位置 |
+| `Input::GetMouseButtonDown(int button)` | `bool` | 鼠标按钮是否刚按下（本帧边沿） |
+| `Input::GetMouseButtonUp(int button)` | `bool` | 鼠标按钮是否刚释放（本帧边沿） |
+| `Input::GetMouseDeltaX()` | `float` | 鼠标 X 轴移动增量 |
+| `Input::GetMouseDeltaY()` | `float` | 鼠标 Y 轴移动增量 |
+| `Input::GetScrollDelta()` | `float` | 滚轮增量（向上正，向下负） |
 
 **按键常量**: 使用 GLFW 定义，如 `GLFW_KEY_W`、`GLFW_KEY_SPACE`、`GLFW_KEY_ESCAPE` 等。需 `#include <GLFW/glfw3.h>`。
 
@@ -655,6 +774,7 @@ std::unique_ptr<RHIDevice> CreateOpenGLDevice();
 | 方法 | 返回值 | 说明 |
 |------|--------|------|
 | `Upload(int w, int h, int channels, const uint8_t* data)` | `void` | 上传像素数据 |
+| `Bind(int unit = 0)` | `void` | 绑定纹理到指定纹理单元 |
 | `GetWidth()` | `int` | 纹理宽度 |
 | `GetHeight()` | `int` | 纹理高度 |
 
@@ -757,7 +877,7 @@ public:
         SetName("MyObject");
         ARK_LOG_INFO("Game", "Hello from " + GetName());
     }
-    void Tick(float dt) override {
+    void Loop(float dt) override {
         // 每帧逻辑
     }
 };

@@ -24,7 +24,7 @@ void SceneManager::ProcessPendingSwitch() {
         activeScene_ = pendingSceneFactory_();
         pendingSceneFactory_ = nullptr;
 
-        ARK_LOG_INFO("Core", "Scene loaded");
+        ARK_LOG_INFO("Core", "Scene loaded: " + activeScene_->GetSceneName());
 
         // 3. OnLoad creates initial objects
         activeScene_->OnLoad();

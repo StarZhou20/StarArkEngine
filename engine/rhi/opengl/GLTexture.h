@@ -14,11 +14,11 @@ public:
     GLTexture& operator=(const GLTexture&) = delete;
 
     void Upload(int width, int height, int channels, const uint8_t* data) override;
+    void Bind(int unit = 0) const override;
     int GetWidth() const override { return width_; }
     int GetHeight() const override { return height_; }
 
     GLuint GetHandle() const { return handle_; }
-    void Bind(GLuint unit = 0) const;
 
 private:
     GLuint handle_ = 0;

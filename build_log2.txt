@@ -1,0 +1,442 @@
+[  0%] Linking C static library glfw3d.lib
+[ 11%] Built target glfw
+[ 12%] Built target libglew_static
+[ 14%] Built target libglew_shared
+[ 19%] Built target spdlog
+[ 20%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/adler32.c.obj
+adler32.c
+[ 20%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/compress.c.obj
+compress.c
+?⒁? 包含文件:       C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\vadefs.h
+[ 21%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/crc32.c.obj
+crc32.c
+?⒁? 包含文件:    C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_malloc.h
+[ 21%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/deflate.c.obj
+deflate.c
+[ 22%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/gzclose.c.obj
+gzclose.c
+?⒁? 包含文件:    C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_memory.h
+?⒁? 包含文件:      C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\errno.h
+?⒁? 包含文件:    C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_wstring.h
+[ 22%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/gzlib.c.obj
+gzlib.c
+?⒁? 包含文件:     C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\stdarg.h
+?⒁? 包含文件:   C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\string.h
+[ 23%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/gzread.c.obj
+gzread.c
+?⒁? 包含文件:    C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt.h
+[ 23%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/gzwrite.c.obj
+gzwrite.c
+[ 24%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/inflate.c.obj
+inflate.c
+[ 24%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/infback.c.obj
+infback.c
+[ 25%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/inftrees.c.obj
+inftrees.c
+[ 25%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/inffast.c.obj
+inffast.c
+[ 26%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/trees.c.obj
+trees.c
+[ 26%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/uncompr.c.obj
+uncompr.c
+[ 27%] Building C object _deps/assimp-build/contrib/zlib/CMakeFiles/zlibstatic.dir/zutil.c.obj
+zutil.c
+?⒁? 包含文件:   C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\fcntl.h
+[ 28%] Linking C static library zlibstaticd.lib
+[ 28%] Built target zlibstatic
+[ 28%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/Assimp.cpp.obj
+Assimp.cpp
+[ 29%] Building RC object _deps/assimp-build/code/CMakeFiles/assimp.dir/res/assimp.rc.res
+Microsoft (R) Windows (R) Resource Compiler Version 10.0.10011.16384
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+[ 29%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/CApi/CInterfaceIOWrapper.cpp.obj
+CInterfaceIOWrapper.cpp
+?⒁? 包含文件:        C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\crtdbg.h
+?⒁? 包含文件:         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\vcruntime_new_debug.h
+?⒁? 包含文件:        C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\cstdint
+[ 30%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/Compression.cpp.obj
+Compression.cpp
+?⒁? 包含文件:      E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp\color4.inl
+[ 30%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/BaseImporter.cpp.obj
+BaseImporter.cpp
+?⒁? 包含文件:           C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_wtime.h
+[ 31%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/BaseProcess.cpp.obj
+BaseProcess.cpp
+?⒁? 包含文件:     C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\stdlib.h
+?⒁? 包含文件:      C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt.h
+?⒁? 包含文件:       C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\stddef.h
+?⒁? 包含文件:     E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp/types.h
+?⒁? 包含文件:               C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\nmmintrin.h
+[ 31%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/PostStepRegistry.cpp.obj
+PostStepRegistry.cpp
+?⒁? 包含文件:        C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\errno.h
+?⒁? 包含文件:                 C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\pmmintrin.h
+?⒁? 包含文件:                   C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\xmmintrin.h
+[ 32%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/ImporterRegistry.cpp.obj
+ImporterRegistry.cpp
+?⒁? 包含文件:       C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\vcruntime_string.h
+?⒁? 包含文件:      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\xtr1common
+[ 32%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/DefaultIOStream.cpp.obj
+DefaultIOStream.cpp
+?⒁? 包含文件:     E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp\quaternion.inl
+[ 33%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/IOSystem.cpp.obj
+IOSystem.cpp
+[ 33%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/DefaultIOSystem.cpp.obj
+DefaultIOSystem.cpp
+[ 34%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/ZipArchiveIOSystem.cpp.obj
+ZipArchiveIOSystem.cpp
+[ 34%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/Importer.cpp.obj
+Importer.cpp
+?⒁? 包含文件:     C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\algorithm
+?⒁? 包含文件:    C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\unordered_set
+?⒁? 包含文件:    E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp/texture.h
+[ 35%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/SGSpatialSort.cpp.obj
+SGSpatialSort.cpp
+?⒁? 包含文件:    C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\new
+?⒁? 包含文件:          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\initializer_list
+[ 36%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/VertexTriangleAdjacency.cpp.obj
+VertexTriangleAdjacency.cpp
+?⒁? 包含文件:       C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_wstring.h
+[ 36%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/SpatialSort.cpp.obj
+SpatialSort.cpp
+[ 37%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/SceneCombiner.cpp.obj
+SceneCombiner.cpp
+?⒁? 包含文件:        C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\vcruntime_string.h
+[ 37%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/ScenePreprocessor.cpp.obj
+ScenePreprocessor.cpp
+?⒁? 包含文件:       C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\intrin0.inl.h
+[ 38%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/SkeletonMeshBuilder.cpp.obj
+SkeletonMeshBuilder.cpp
+[ 38%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/StandardShapes.cpp.obj
+StandardShapes.cpp
+?⒁? 包含文件:       C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\xkeycheck.h
+?⒁? 包含文件:        C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_wtime.h
+[ 39%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/TargetAnimation.cpp.obj
+TargetAnimation.cpp
+?⒁? 包含文件:        C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\stdlib.h
+[ 39%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/RemoveComments.cpp.obj
+RemoveComments.cpp
+[ 40%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/Subdivision.cpp.obj
+Subdivision.cpp
+?⒁? 包含文件:    C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\string.h
+?⒁? 包含文件:      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\cstdlib
+?⒁? 包含文件:    C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\cstring
+[ 40%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/scene.cpp.obj
+scene.cpp
+?⒁? 包含文件:     C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\exception
+[ 41%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/Bitmap.cpp.obj
+Bitmap.cpp
+?⒁? 包含文件:       C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\errno.h
+[ 41%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/Version.cpp.obj
+Version.cpp
+[ 42%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/CreateAnimMesh.cpp.obj
+CreateAnimMesh.cpp
+[ 42%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/simd.cpp.obj
+simd.cpp
+[ 43%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/material.cpp.obj
+material.cpp
+[ 43%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/AssertHandler.cpp.obj
+AssertHandler.cpp
+?⒁? 包含文件:             C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\errno.h
+[ 44%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/Exceptional.cpp.obj
+Exceptional.cpp
+?⒁? 包含文件:       C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\algorithm
+[ 44%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/Base64.cpp.obj
+Base64.cpp
+[ 45%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Geometry/GeometryUtils.cpp.obj
+GeometryUtils.cpp
+?⒁? 包含文件:      C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_memcpy_s.h
+[ 45%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Common/DefaultLogger.cpp.obj
+DefaultLogger.cpp
+[ 46%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/CalcTangentsProcess.cpp.obj
+CalcTangentsProcess.cpp
+?⒁? 包含文件:         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\vcruntime_new_debug.h
+?⒁? 包含文件:    E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp/camera.h
+[ 47%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/ComputeUVMappingProcess.cpp.obj
+ComputeUVMappingProcess.cpp
+?⒁? 包含文件:       C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_search.h
+?⒁? 包含文件:      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\cmath
+?⒁? 包含文件:        C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\use_ansi.h
+[ 47%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/ConvertToLHProcess.cpp.obj
+ConvertToLHProcess.cpp
+?⒁? 包含文件:        C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\vcruntime_new_debug.h
+[ 48%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/EmbedTexturesProcess.cpp.obj
+EmbedTexturesProcess.cpp
+?⒁? 包含文件:        C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\exception
+?⒁? 包含文件:         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\type_traits
+?⒁? 包含文件:          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\cstddef
+[ 48%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/FindDegenerates.cpp.obj
+FindDegenerates.cpp
+?⒁? 包含文件:        C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_memcpy_s.h
+?⒁? 包含文件:         C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\errno.h
+[ 49%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/FindInstancesProcess.cpp.obj
+FindInstancesProcess.cpp
+[ 49%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/FindInvalidDataProcess.cpp.obj
+FindInvalidDataProcess.cpp
+[ 50%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/FixNormalsStep.cpp.obj
+FixNormalsStep.cpp
+?⒁? 包含文件:  E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp/DefaultLogger.hpp
+[ 50%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/DropFaceNormalsProcess.cpp.obj
+DropFaceNormalsProcess.cpp
+[ 51%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/GenFaceNormalsProcess.cpp.obj
+GenFaceNormalsProcess.cpp
+[ 51%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/GenVertexNormalsProcess.cpp.obj
+GenVertexNormalsProcess.cpp
+[ 52%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/PretransformVertices.cpp.obj
+PretransformVertices.cpp
+?⒁? 包含文件:    E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp/texture.h
+[ 52%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/ImproveCacheLocality.cpp.obj
+ImproveCacheLocality.cpp
+?⒁? 包含文件:       C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\yvals.h
+[ 53%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/JoinVerticesProcess.cpp.obj
+JoinVerticesProcess.cpp
+?⒁? 包含文件:       E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp/color4.h
+?⒁? 包含文件:           C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_terminate.h
+[ 53%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/LimitBoneWeightsProcess.cpp.obj
+LimitBoneWeightsProcess.cpp
+?⒁? 包含文件:          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\cstddef
+[ 54%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/RemoveRedundantMaterials.cpp.obj
+RemoveRedundantMaterials.cpp
+?⒁? 包含文件:       E:\Everything\StarArk\build2\_deps\assimp-build\include\assimp/config.h
+?⒁? 包含文件:        C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\xstring
+[ 54%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/RemoveVCProcess.cpp.obj
+RemoveVCProcess.cpp
+?⒁? 包含文件:    E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp\./Compiler/pushpack1.h
+[ 55%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/SortByPTypeProcess.cpp.obj
+SortByPTypeProcess.cpp
+?⒁? 包含文件:        C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\use_ansi.h
+?⒁? 包含文件:       E:\Everything\StarArk\build2\_deps\assimp-build\include\assimp/config.h
+[ 55%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/SplitLargeMeshes.cpp.obj
+SplitLargeMeshes.cpp
+[ 56%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/TextureTransform.cpp.obj
+TextureTransform.cpp
+[ 56%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/TriangulateProcess.cpp.obj
+TriangulateProcess.cpp
+?⒁? 包含文件:       E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp/quaternion.h
+?⒁? 包含文件:      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\list
+[ 57%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/ValidateDataStructure.cpp.obj
+ValidateDataStructure.cpp
+?⒁? 包含文件:     C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_memory.h
+?⒁? 包含文件:        C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\vcruntime_new_debug.h
+?⒁? 包含文件:        C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_wstdlib.h
+?⒁? 包含文件:    C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\cstring
+?⒁? 包含文件:    E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp/StringComparison.h
+?⒁? 包含文件:    E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp/DefaultIOStream.h
+[ 58%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/OptimizeGraph.cpp.obj
+OptimizeGraph.cpp
+[ 58%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/OptimizeMeshes.cpp.obj
+OptimizeMeshes.cpp
+?⒁? 包含文件:      C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\stdlib.h
+?⒁? 包含文件:     E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp/Importer.hpp
+[ 59%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/DeboneProcess.cpp.obj
+DeboneProcess.cpp
+?⒁? 包含文件:        C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\use_ansi.h
+[ 59%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/ProcessHelper.cpp.obj
+ProcessHelper.cpp
+?⒁? 包含文件:      E:\Everything\StarArk\build2\_deps\assimp-build\include\assimp/config.h
+?⒁? 包含文件:     C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\stddef.h
+?⒁? 包含文件:        C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\intrin0.inl.h
+[ 60%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/MakeVerboseFormat.cpp.obj
+MakeVerboseFormat.cpp
+?⒁? 包含文件:       C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_wstring.h
+?⒁? 包含文件:           C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_terminate.h
+?⒁? 包含文件:      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\xbit_ops.h
+[ 60%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/ScaleProcess.cpp.obj
+ScaleProcess.cpp
+?⒁? 包含文件:     E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp/Importer.hpp
+[ 61%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/ArmaturePopulate.cpp.obj
+ArmaturePopulate.cpp
+?⒁? 包含文件:       C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_memory.h
+?⒁? 包含文件:         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\vcruntime_new_debug.h
+[ 61%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/GenBoundingBoxesProcess.cpp.obj
+GenBoundingBoxesProcess.cpp
+[ 62%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/PostProcessing/SplitByBoneCountProcess.cpp.obj
+SplitByBoneCountProcess.cpp
+[ 62%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/Material/MaterialSystem.cpp.obj
+MaterialSystem.cpp
+?⒁? 包含文件:       E:\Everything\StarArk\build2\_deps\assimp-src\include\assimp\MathFunctions.h
+[ 63%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/STEPParser/STEPFileReader.cpp.obj
+STEPFileReader.cpp
+[ 63%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/STEPParser/STEPFileEncoding.cpp.obj
+STEPFileEncoding.cpp
+?⒁? 包含文件:       C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\cstdio
+?⒁? 包含文件:        C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\stdio.h
+?⒁? 包含文件:         C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_wstdio.h
+?⒁? 包含文件:                C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\vcruntime_typeinfo.h
+[ 64%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/Obj/ObjFileImporter.cpp.obj
+ObjFileImporter.cpp
+?⒁? 包含文件:          C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\ctype.h
+[ 64%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/Obj/ObjFileMtlImporter.cpp.obj
+ObjFileMtlImporter.cpp
+[ 65%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/Obj/ObjFileParser.cpp.obj
+ObjFileParser.cpp
+[ 65%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXImporter.cpp.obj
+FBXImporter.cpp
+[ 66%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXParser.cpp.obj
+FBXParser.cpp
+?⒁? 包含文件:     C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\intrin0.h
+[ 66%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXTokenizer.cpp.obj
+FBXTokenizer.cpp
+?⒁? 包含文件:      C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt.h
+[ 67%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXConverter.cpp.obj
+FBXConverter.cpp
+[ 67%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXUtil.cpp.obj
+FBXUtil.cpp
+[ 68%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXDocument.cpp.obj
+FBXDocument.cpp
+?⒁? 包含文件:       C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt.h
+?⒁? 包含文件:         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\zmmintrin.h
+[ 69%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXProperties.cpp.obj
+FBXProperties.cpp
+[ 69%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXMeshGeometry.cpp.obj
+FBXMeshGeometry.cpp
+[ 70%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXMaterial.cpp.obj
+FBXMaterial.cpp
+?⒁? 包含文件:         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\xtr1common
+[ 70%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXModel.cpp.obj
+FBXModel.cpp
+[ 71%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXAnimation.cpp.obj
+FBXAnimation.cpp
+?⒁? 包含文件:        C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\vcruntime_new.h
+?⒁? 包含文件:      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\crtdefs.h
+?⒁? 包含文件:         C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\stddef.h
+[ 71%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXNodeAttribute.cpp.obj
+FBXNodeAttribute.cpp
+[ 72%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXDeformer.cpp.obj
+FBXDeformer.cpp
+[ 72%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXBinaryTokenizer.cpp.obj
+FBXBinaryTokenizer.cpp
+?⒁? 包含文件:          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\eh.h
+[ 73%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/FBX/FBXDocumentUtil.cpp.obj
+FBXDocumentUtil.cpp
+[ 73%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/glTF/glTFCommon.cpp.obj
+glTFCommon.cpp
+[ 74%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/glTF/glTFImporter.cpp.obj
+glTFImporter.cpp
+?⒁? 包含文件:            C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_math.h
+[ 74%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/AssetLib/glTF2/glTF2Importer.cpp.obj
+glTF2Importer.cpp
+[ 75%] Building C object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/unzip/ioapi.c.obj
+ioapi.c
+?⒁? 包含文件:     C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\sys/types.h
+[ 75%] Building C object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/unzip/unzip.c.obj
+unzip.c
+[ 76%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/poly2tri/poly2tri/common/shapes.cc.obj
+shapes.cc
+?⒁? 包含文件:       C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\stddef.h
+?⒁? 包含文件:    C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\__msvc_ostream.hpp
+[ 76%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/poly2tri/poly2tri/sweep/advancing_front.cc.obj
+advancing_front.cc
+[ 77%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/poly2tri/poly2tri/sweep/cdt.cc.obj
+cdt.cc
+[ 77%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/poly2tri/poly2tri/sweep/sweep.cc.obj
+sweep.cc
+[ 78%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/poly2tri/poly2tri/sweep/sweep_context.cc.obj
+sweep_context.cc
+[ 78%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/clipper/clipper.cpp.obj
+clipper.cpp
+?⒁? 包含文件:     C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\xtr1common
+?⒁? 包含文件:    C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\__msvc_sanitizer_annotate_container.hpp
+[ 79%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/openddlparser/code/OpenDDLParser.cpp.obj
+OpenDDLParser.cpp
+?⒁? 包含文件:       C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\iosfwd
+[ 80%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/openddlparser/code/DDLNode.cpp.obj
+DDLNode.cpp
+?⒁? 包含文件:          C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_wstdio.h
+[ 80%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/openddlparser/code/OpenDDLCommon.cpp.obj
+OpenDDLCommon.cpp
+?⒁? 包含文件:     C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\xtr1common
+[ 81%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/openddlparser/code/OpenDDLExport.cpp.obj
+OpenDDLExport.cpp
+[ 81%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/openddlparser/code/Value.cpp.obj
+Value.cpp
+[ 82%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/openddlparser/code/OpenDDLStream.cpp.obj
+OpenDDLStream.cpp
+[ 82%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/Open3DGC/o3dgcArithmeticCodec.cpp.obj
+o3dgcArithmeticCodec.cpp
+[ 83%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/Open3DGC/o3dgcDynamicVectorDecoder.cpp.obj
+o3dgcDynamicVectorDecoder.cpp
+[ 83%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/Open3DGC/o3dgcDynamicVectorEncoder.cpp.obj
+o3dgcDynamicVectorEncoder.cpp
+[ 84%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/Open3DGC/o3dgcTools.cpp.obj
+o3dgcTools.cpp
+[ 84%] Building CXX object _deps/assimp-build/code/CMakeFiles/assimp.dir/__/contrib/Open3DGC/o3dgcTriangleFans.cpp.obj
+o3dgcTriangleFans.cpp
+[ 85%] Linking CXX static library ..\lib\assimp-vc145-mtd.lib
+[ 85%] Built target assimp
+[ 85%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/core/AObject.cpp.obj
+AObject.cpp
+[ 86%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/core/AScene.cpp.obj
+AScene.cpp
+[ 86%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/core/EngineBase.cpp.obj
+EngineBase.cpp
+?⒁? 包含文件:              E:\Everything\StarArk\build2\_deps\glm-wrapper\glm\./ext/matrix_double4x2.hpp
+?⒁? 包含文件:              E:\Everything\StarArk\build2\_deps\glm-wrapper\glm\./ext/matrix_float4x4.hpp
+[ 87%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/core/SceneManager.cpp.obj
+SceneManager.cpp
+?⒁? 包含文件:               E:\Everything\StarArk\build2\_deps\glm-wrapper\glm\detail\type_mat2x4.inl
+?⒁? 包含文件:         E:\Everything\StarArk\build2\_deps\glm-wrapper\glm\ext\quaternion_geometric.inl
+[ 87%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/core/Transform.cpp.obj
+Transform.cpp
+?⒁? 包含文件:     E:\Everything\StarArk\build2\_deps\glm-wrapper\glm\./ext/matrix_double2x2_precision.hpp
+[ 88%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/debug/ConsoleDebugListener.cpp.obj
+ConsoleDebugListener.cpp
+?⒁? 包含文件:    C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\array
+[ 88%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/debug/DebugListenBus.cpp.obj
+DebugListenBus.cpp
+[ 89%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/debug/FileDebugListener.cpp.obj
+FileDebugListener.cpp
+?⒁? 包含文件:    E:\Everything\StarArk\engine/debug/DebugListenBus.h
+[ 89%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/platform/Input.cpp.obj
+Input.cpp
+[ 90%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/platform/Time.cpp.obj
+Time.cpp
+[ 90%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/platform/Window.cpp.obj
+Window.cpp
+[ 91%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/rendering/Camera.cpp.obj
+Camera.cpp
+?⒁? 包含文件:          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\concurrencysal.h
+?⒁? 包含文件:      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\xtr1common
+?⒁? 包含文件:           E:\Everything\StarArk\build2\_deps\glm-wrapper\glm\ext\../detail/type_mat3x4.hpp
+[ 91%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/rendering/ForwardRenderer.cpp.obj
+ForwardRenderer.cpp
+[ 92%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/rendering/Light.cpp.obj
+Light.cpp
+?⒁? 包含文件:      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\exception
+[ 92%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/rendering/Material.cpp.obj
+Material.cpp
+?⒁? 包含文件:               C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\assert.h
+[ 93%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/rendering/Mesh.cpp.obj
+Mesh.cpp
+[ 93%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/rendering/MeshRenderer.cpp.obj
+MeshRenderer.cpp
+?⒁? 包含文件:           C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\ucrt\corecrt_wprocess.h
+[ 94%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/rendering/OrbitCamera.cpp.obj
+OrbitCamera.cpp
+?⒁? 包含文件:          E:\Everything\StarArk\build2\_deps\glm-wrapper\glm\./ext/matrix_float4x2_precision.hpp
+[ 94%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/rendering/TextureLoader.cpp.obj
+TextureLoader.cpp
+[ 95%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/rhi/opengl/GLBuffer.cpp.obj
+GLBuffer.cpp
+[ 95%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/rhi/opengl/GLCommandBuffer.cpp.obj
+GLCommandBuffer.cpp
+?⒁? 包含文件:      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\cmath
+[ 96%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/rhi/opengl/GLDevice.cpp.obj
+GLDevice.cpp
+[ 97%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/rhi/opengl/GLPipeline.cpp.obj
+GLPipeline.cpp
+?⒁? 包含文件:        C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\sal.h
+[ 97%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/rhi/opengl/GLShader.cpp.obj
+GLShader.cpp
+[ 98%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/rhi/opengl/GLTexture.cpp.obj
+GLTexture.cpp
+[ 98%] Building CXX object engine/CMakeFiles/StarArkEngine.dir/third_party/stb/stb_image_impl.cpp.obj
+stb_image_impl.cpp
+[ 99%] Linking CXX static library StarArkEngined.lib
+[ 99%] Built target StarArkEngine
+[ 99%] Building CXX object game/CMakeFiles/StarArkGame.dir/main.cpp.obj
+main.cpp
+?⒁? 包含文件:         E:\Everything\StarArk\build2\_deps\glm-wrapper\glm\./ext/vector_int4.hpp
+[100%] Linking CXX executable StarArkGame.exe
+[100%] Built target StarArkGame

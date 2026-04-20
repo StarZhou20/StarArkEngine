@@ -19,6 +19,10 @@ public:
     AScene(const AScene&) = delete;
     AScene& operator=(const AScene&) = delete;
 
+    // --- Scene name ---
+    const std::string& GetSceneName() const { return sceneName_; }
+    void SetSceneName(const std::string& name) { sceneName_ = name; }
+
     // --- Scene lifecycle (overridable) ---
     virtual void OnLoad() {}
     virtual void OnUnload() {}
@@ -49,6 +53,7 @@ public:
     EngineBase* GetEngine() const { return engine_; }
 
 private:
+    std::string sceneName_;
     std::vector<std::unique_ptr<AObject>> objectList_;
     std::vector<std::unique_ptr<AObject>> pendingList_;
     EngineBase* engine_ = nullptr;

@@ -1,7 +1,7 @@
 # StarArk 工程开发日志 (DevLog)
 
 > **用途**: 供 AI 编码助手阅读，快速了解项目当前状态、已完成内容、待办事项和技术约束。  
-> **最后更新**: 2026-04-17
+> **最后更新**: 2026-04-21
 
 ---
 
@@ -49,6 +49,7 @@ build2\game\StarArkGame.exe
 | GLM | 1.0.1 | `deps_cache/glm-1.0.1-light.zip` |
 | GLEW (cmake fork) | 2.2.0 | `deps_cache/glew-cmake-2.2.0.zip` |
 | spdlog | 1.15.0 | `deps_cache/spdlog-1.15.0.zip` |
+| Assimp | 5.4.3 | `deps_cache/assimp-5.4.3.zip` |
 
 **GLM 特殊处理**: glm-light zip 提取后为扁平结构（`glm-src/glm.hpp` 而非 `glm-src/glm/glm.hpp`），通过 `mklink /J` junction 解决：cmake 在 `_deps/glm-wrapper/glm` 创建指向 `_deps/glm-src` 的 junction，使 `#include <glm/glm.hpp>` 正常工作。
 
@@ -101,9 +102,17 @@ StarArk/
 │       ├── Camera.h/cpp        # 相机组件（透视/正交、优先级、静态注册）
 │       ├── Light.h/cpp         # 光源组件（方向光/点光/聚光灯）
 │       ├── Mesh.h/cpp          # 网格资源（顶点+索引 + GPU 上传 + 原始体生成）
-│       ├── Material.h/cpp      # 材质（shader + 颜色/高光/纹理）
+│       ├── Material.h/cpp      # 材质（shader + 颜色/PBR参数/纹理）
 │       ├── MeshRenderer.h/cpp  # 网格渲染器组件
-│       └── ForwardRenderer.h/cpp # 前向渲染管线（Blinn-Phong）
+│       ├── ForwardRenderer.h/cpp # 前向渲染管线（Blinn-Phong + PBR）
+│       ├── ShaderSources.h     # 内置 GLSL 着色器（Phong + PBR Cook-Torrance）
+│       ├── OrbitCamera.h/cpp   # 轨道相机控制器组件
+│       ├── TextureLoader.h/cpp # 纹理文件加载（stb_image）
+│       └── ModelLoader.h/cpp  # 3D模型加载（Assimp）
+├── engine/third_party/
+│   └── stb/                    # stb_image 单头文件库
+│       ├── stb_image.h
+│       └── stb_image_impl.cpp
 └── game/
     ├── CMakeLists.txt          # StarArkGame 可执行文件
     └── main.cpp                # 当前 demo：旋转立方体 + 光照
@@ -133,8 +142,8 @@ StarArk/
 - **EngineBase**: 单例，`Run<FirstScene>(w, h, title)` 入口，14 步主循环
 - **SceneManager**: 拥有当前 AScene，`LoadScene<T>()` 延迟切换，`LoadSceneImmediate<T>()` 启动用
 - **AScene**: 可继承场景，ObjectList + PendingList，`CreateObject<T>()` 创建对象
-- **AObject**: 基类，自增 uint64_t id，内置 Transform，组件系统（Add/Get/RemoveComponent），生命周期（Init/PostInit/Tick/PostTick/OnDestroy），Destroy 级联到子节点，SetDontDestroy 转移到 EngineBase
-- **AComponent**: 基类，OnAttach/OnDetach/Tick/PostTick，enabled 标记
+- **AObject**: 基类，自增 uint64_t id，内置 Transform，组件系统（Add/Get/RemoveComponent），生命周期（PreInit/Init/PostInit/Loop/PostLoop/OnDestroy），Destroy 级联到子节点，SetDontDestroy 转移到 EngineBase
+- **AComponent**: 基类，OnAttach/OnDetach/PreInit/Init/PostInit/Loop/PostLoop，enabled 标记
 - **Transform**: position/rotation(quat)/scale，父子层级，局部/世界矩阵 + 脏标记，析构时双向清理
 - **IObjectOwner**: AScene 和 EngineBase 共同实现的接口
 - **验证**: DemoScene 加载、TriangleObject 创建、组件系统工作、60fps
@@ -143,12 +152,53 @@ StarArk/
 
 - **Camera 组件**: 透视/正交投影，优先级排序，静态注册表（OnAttach 注册、OnDetach 注销）
 - **Light 组件**: 方向光/点光/聚光灯类型，颜色/强度/范围/锥角，静态注册表
-- **Mesh 资源**: 顶点+索引数据，GPU 上传，`CreateCube()` / `CreatePlane()` 原始体生成
-- **Material**: shader 引用 + 颜色/高光/光泽度/漫反射纹理，Bind() 设置 per-material uniforms
+- **Mesh 资源**: 顶点+索引数据，GPU 上传，`CreateCube()` / `CreatePlane()` / `CreateSphere()` 原始体生成
+- **Material**: shader 引用 + 颜色/PBR 参数（metallic/roughness/ao）/漫反射纹理，Bind() 设置 per-material uniforms 并绑定纹理
 - **MeshRenderer 组件**: 持有 Mesh + Material（shared_ptr），静态注册表
-- **ForwardRenderer**: 遍历相机（按优先级排序）→ 收集可见 MeshRenderer → Blinn-Phong 光照 → 绘制
-- EngineBase 主循环 step 11 调用 `ForwardRenderer::RenderFrame()`，step 3 窗口 resize 更新相机宽高比
+- **ForwardRenderer**: 遍历相机（按优先级排序）→ 收集可见 MeshRenderer → 多光源渲染 → 绘制
+- **多光源渲染**: 支持最多 4 方向光 + 8 点光 + 4 聚光灯，shader uniform 数组
 - **验证**: 旋转立方体 + 透视相机 + 方向光 + Blinn-Phong 着色，稳定 60fps
+
+### Phase 5: PBR + 相机控制 + 纹理加载 ✅
+
+- **PBR 着色器 (Cook-Torrance)**:
+  - GGX 法线分布函数 (NDF)
+  - Smith-GGX 几何遮蔽函数 (Schlick 近似)
+  - Fresnel-Schlick 菲涅尔
+  - Metallic-Roughness 工作流
+  - Reinhard HDR 色调映射 + gamma 校正 (pow 1/2.2)
+  - 内置着色器：`ark::kPhongVS/kPhongFS`（Blinn-Phong）、`ark::kPBR_VS/kPBR_FS`（PBR）
+- **OrbitCamera 组件**: 围绕目标点的轨道相机控制器
+  - 右键拖拽旋转（yaw/pitch），滚轮缩放，中键平移
+  - 可配置灵敏度、距离范围、俯仰角限制
+- **Input 系统扩展**: 鼠标移动增量（GetMouseDeltaX/Y）、滚轮回调（GetScrollDelta）、鼠标按键边沿检测（GetMouseButtonDown/Up）
+- **纹理加载系统**:
+  - stb_image 集成（PNG/JPG/BMP/TGA），位于 `engine/third_party/stb/`
+  - `TextureLoader::Load(device, filepath)` 从文件加载到 RHITexture
+  - `RHITexture` 接口新增 `Bind(int unit)` 虚函数
+  - `Material::Bind()` 自动绑定 diffuse 纹理到 unit 0 + 设置 sampler uniform
+  - Phong 和 PBR 着色器均支持 `uDiffuseTex` 采样
+- **验证**: 10 个 PBR 球体（金属/电介质，粗糙度渐变）+ 棋盘格纹理地面 + 轨道相机，多光源
+
+### Phase 6: 模型加载 (Assimp) ✅
+
+- **Assimp 集成**: v5.4.3 通过 FetchContent + 本地 zip，仅启用 OBJ/FBX/glTF 导入器以减小编译体积
+- **ModelLoader**: `ModelLoader::Load(device, shader, filepath)` → 返回 `vector<ModelNode>`（mesh + material）
+  - 自动解析 Assimp 顶点/法线/UV → 引擎 Mesh
+  - 自动提取材质（漫反射颜色/高光/光泽度/漫反射纹理）
+  - 纹理路径相对于模型文件目录自动解析
+  - 支持 aiProcess_Triangulate / GenNormals / FlipUVs / CalcTangentSpace
+- **ModelNode 结构**: `shared_ptr<Mesh>` + `shared_ptr<Material>` 组合，允许场景中多实例复用
+- **验证**: 加载 OBJ 二十面体 + PBR 材质 + 自动旋转，与 PBR 球体共存于同一场景
+
+### Phase 7: 渲染优化 (Pipeline 缓存 + 渲染排序) ✅
+
+- **Pipeline 缓存 (F6)**: `ForwardRenderer` 中新增 `pipelineCache_`（`unordered_map<uint64_t, PipelineCacheEntry>`）
+  - FNV-1a 哈希键：shader 指针 + 顶点布局 stride/属性数 + 拓扑/深度/混合状态
+  - `GetOrCreatePipeline(desc)` 缓存命中时复用，避免每帧重建 VAO
+- **渲染排序 (F5)**: `RenderCamera()` 中收集可见 MeshRenderer 后按 shader 指针 → material 指针排序
+  - 减少状态切换（shader 绑定、材质 uniform 设置）
+- **验证**: 构建通过，PBR 场景渲染正常
 
 ---
 
@@ -156,14 +206,14 @@ StarArk/
 
 ### 高优先级（核心功能缺失）
 
-| 编号 | 功能 | 描述 | 依赖 |
+| 编号 | 功能 | 描述 | 状态 |
 |------|------|------|------|
-| **F1** | 纹理加载 | stb_image 集成，支持 PNG/JPG 加载到 RHITexture | 需添加 stb_image 依赖 |
-| **F2** | 模型加载 | Assimp 集成，FBX/OBJ/glTF 导入为 Mesh + Material | 需添加 Assimp 依赖 |
-| **F3** | 点光/聚光灯渲染 | ForwardRenderer 当前仅支持方向光，需扩展 shader 支持多光源 | Phase 4 已有 Light 数据结构 |
-| **F4** | 多光源支持 | 当前仅用第一个方向光，需支持多个光源的叠加 | F3 |
-| **F5** | 渲染排序 | 按材质/深度排序 MeshRenderer，减少状态切换 | - |
-| **F6** | Pipeline 缓存 | ForwardRenderer 每帧重建 Pipeline，需缓存复用 | - |
+| **F1** | ~~纹理加载~~ | stb_image 集成，支持 PNG/JPG 加载到 RHITexture | ✅ 已完成 |
+| **F2** | ~~模型加载~~ | Assimp 5.4.3 集成，OBJ/FBX/glTF 导入为 Mesh + Material | ✅ 已完成 |
+| **F3** | ~~多光源渲染~~ | 支持方向光/点光/聚光灯多光源叠加 | ✅ 已完成 |
+| **F4** | ~~PBR 渲染~~ | Cook-Torrance BRDF，metallic-roughness 工作流 | ✅ 已完成 |
+| **F5** | ~~渲染排序~~ | 按 shader/material 指针排序 MeshRenderer，减少状态切换 | ✅ 已完成 |
+| **F6** | ~~Pipeline 缓存~~ | FNV-1a 哈希缓存，避免每帧重建 Pipeline/VAO | ✅ 已完成 |
 
 ### 中优先级（完善功能）
 
@@ -192,11 +242,10 @@ StarArk/
 
 ## 6. 已知问题 & 技术债
 
-1. **Pipeline 每帧重建**: `ForwardRenderer::DrawMeshRenderer()` 中每次绘制都调用 `CreatePipeline()`，应缓存
+1. ~~**Pipeline 每帧重建**~~: 已通过 Pipeline 缓存解决（Phase 7）
 2. **ForwardRenderer 中 uniform 设置时序**: 在 cmdBuffer 的 Begin/End 之间调用 `shader->SetUniform*()` 是直接的 OpenGL 调用（不经过命令缓冲区录制），这在 OpenGL 后端可以工作但不够干净
 3. **GLM include 依赖 junction**: 构建系统通过 `mklink /J` junction 解决 GLM 的包含路径问题，首次构建时需要管理员权限或开发者模式
 4. **静态注册表线程安全**: Camera/Light/MeshRenderer 的静态 `vector<T*>` 不是线程安全的
-5. **stb_image / Assimp 未集成**: 纹理和模型加载功能缺失
 
 ---
 
@@ -208,11 +257,11 @@ StarArk/
 1. PollInput
 2. Time::Update()
 3. 窗口 resize → 更新 Camera 宽高比
-4. DrainPendingObjects（Init/PostInit 新对象，循环直到无新增）
-5. Tick 持久对象（EngineBase::persistentList_）
-6. Tick 场景对象（AScene::objectList_）
-7. PostTick 持久对象
-8. PostTick 场景对象
+4. DrainPendingObjects（PreInit/Init/PostInit 新对象，循环直到无新增）
+5. Loop 持久对象（EngineBase::persistentList_）
+6. Loop 场景对象（AScene::objectList_）
+7. PostLoop 持久对象
+8. PostLoop 场景对象
 9. AScene::Tick(dt)（场景级逻辑）
 10. UpdateTransforms（只遍历脏的根节点子树）
 11. ForwardRenderer::RenderFrame()
@@ -233,8 +282,8 @@ StarArk/
 ### 组件生命周期
 
 ```
-AddComponent<T>() → 构造 → owner_ 赋值 → OnAttach()
-[每帧] → Tick(dt) / PostTick(dt)（如果 enabled）
+AddComponent<T>() → 构造 → owner_ 赋值 → OnAttach() → PreInit() → Init() → PostInit()
+[每帧] → Loop(dt) / PostLoop(dt)（如果 enabled）
 RemoveComponent<T>() → OnDetach() → 析构
 AObject 析构 → 所有组件 OnDetach() → 所有组件析构
 ```
@@ -249,7 +298,7 @@ LoadScene<T>()（延迟到帧末）
 → 创建新场景
 → new.OnLoad()
 → DrainPendingObjects()
-→ 下一帧开始 Tick
+→ 下一帧开始 Loop
 ```
 
 ---

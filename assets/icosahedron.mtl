@@ -1,0 +1,5 @@
+# Material for icosahedron
+newmtl IcoMat
+Kd 0.2 0.6 0.9
+Ks 0.8 0.8 0.8
+Ns 64.0
