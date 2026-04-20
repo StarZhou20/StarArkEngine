@@ -61,13 +61,13 @@ void EngineBase::MainLoop() {
             }
         }
 
-        // 4. Init/PostInit new objects
+        // 4. PreInit/Init/PostInit new objects
         DrainPendingObjects();
 
-        // 5-6. Tick
+        // 5-6. Loop
         StepTick(dt);
 
-        // 7-8. PostTick
+        // 7-8. PostLoop
         StepPostTick(dt);
 
         // 9. Scene-level Tick
@@ -116,6 +116,7 @@ void EngineBase::DrainPendingObjects() {
                 }
                 AObject* raw = obj.get();
                 scene->GetObjectList().push_back(std::move(obj));
+                raw->PreInit();
                 raw->Init();
                 raw->PostInit();
             }
@@ -133,6 +134,7 @@ void EngineBase::DrainPendingObjects() {
                 }
                 AObject* raw = obj.get();
                 persistentList_.push_back(std::move(obj));
+                raw->PreInit();
                 raw->Init();
                 raw->PostInit();
             }
@@ -141,42 +143,42 @@ void EngineBase::DrainPendingObjects() {
 }
 
 void EngineBase::StepTick(float dt) {
-    // 5. Tick persistent objects
+    // 5. Loop persistent objects
     for (auto& obj : persistentList_) {
         if (!obj->IsDestroyed() && obj->IsActiveInHierarchy()) {
-            obj->Tick(dt);
-            obj->TickComponents(dt);
+            obj->Loop(dt);
+            obj->LoopComponents(dt);
         }
     }
 
-    // 6. Tick scene objects
+    // 6. Loop scene objects
     AScene* scene = sceneManager_->GetActiveScene();
     if (scene) {
         for (auto& obj : scene->GetObjectList()) {
             if (!obj->IsDestroyed() && obj->IsActiveInHierarchy()) {
-                obj->Tick(dt);
-                obj->TickComponents(dt);
+                obj->Loop(dt);
+                obj->LoopComponents(dt);
             }
         }
     }
 }
 
 void EngineBase::StepPostTick(float dt) {
-    // 7. PostTick persistent objects
+    // 7. PostLoop persistent objects
     for (auto& obj : persistentList_) {
         if (!obj->IsDestroyed() && obj->IsActiveInHierarchy()) {
-            obj->PostTick(dt);
-            obj->PostTickComponents(dt);
+            obj->PostLoop(dt);
+            obj->PostLoopComponents(dt);
         }
     }
 
-    // 8. PostTick scene objects
+    // 8. PostLoop scene objects
     AScene* scene = sceneManager_->GetActiveScene();
     if (scene) {
         for (auto& obj : scene->GetObjectList()) {
             if (!obj->IsDestroyed() && obj->IsActiveInHierarchy()) {
-                obj->PostTick(dt);
-                obj->PostTickComponents(dt);
+                obj->PostLoop(dt);
+                obj->PostLoopComponents(dt);
             }
         }
     }

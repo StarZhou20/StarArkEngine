@@ -13,8 +13,11 @@ public:
 
     virtual void OnAttach() {}
     virtual void OnDetach() {}
-    virtual void Tick(float dt) { (void)dt; }
-    virtual void PostTick(float dt) { (void)dt; }
+    virtual void PreInit() {}
+    virtual void Init() {}
+    virtual void PostInit() {}
+    virtual void Loop(float dt) { (void)dt; }
+    virtual void PostLoop(float dt) { (void)dt; }
 
     void SetEnabled(bool enabled) { enabled_ = enabled; }
     bool IsEnabled() const { return enabled_; }

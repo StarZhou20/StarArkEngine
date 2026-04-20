@@ -21,10 +21,11 @@ public:
     AObject& operator=(const AObject&) = delete;
 
     // --- Lifecycle (overridable) ---
+    virtual void PreInit() {}
     virtual void Init() {}
     virtual void PostInit() {}
-    virtual void Tick(float dt) { (void)dt; }
-    virtual void PostTick(float dt) { (void)dt; }
+    virtual void Loop(float dt) { (void)dt; }
+    virtual void PostLoop(float dt) { (void)dt; }
     virtual void OnDestroy() {}
 
     // --- Identity ---
@@ -59,6 +60,9 @@ public:
         raw->owner_ = this;
         components_.push_back(std::move(comp));
         raw->OnAttach();
+        raw->PreInit();
+        raw->Init();
+        raw->PostInit();
         return raw;
     }
 
@@ -89,9 +93,9 @@ public:
     IObjectOwner* GetOwnerInterface() const { return owner_; }
     void SetOwnerInterface(IObjectOwner* owner) { owner_ = owner; }
 
-    // --- Internal: tick components ---
-    void TickComponents(float dt);
-    void PostTickComponents(float dt);
+    // --- Internal: loop components ---
+    void LoopComponents(float dt);
+    void PostLoopComponents(float dt);
 
 private:
     static uint64_t nextId_;

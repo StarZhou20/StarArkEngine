@@ -97,7 +97,7 @@ void main() {
 // ============================================================
 class Rotator : public ark::AComponent {
 public:
-    void Tick(float dt) override {
+    void Loop(float dt) override {
         auto& transform = GetOwner()->GetTransform();
         angle_ += rotSpeed_ * dt;
         glm::quat rot = glm::angleAxis(angle_, glm::vec3(0, 1, 0))
@@ -117,7 +117,7 @@ private:
 // ============================================================
 class FrameLogger : public ark::AComponent {
 public:
-    void Tick(float /*dt*/) override {
+    void Loop(float /*dt*/) override {
         if (ark::Time::FrameCount() % 60 == 0 && ark::Time::FrameCount() > 0) {
             ARK_LOG_TRACE("Core", "Frame " + std::to_string(ark::Time::FrameCount()) +
                           " | dt: " + std::to_string(ark::Time::DeltaTime() * 1000.0f) + "ms" +
@@ -148,7 +148,7 @@ public:
         ARK_LOG_INFO("Core", "CameraObject initialized at (0, 1.5, 3)");
     }
 
-    void Tick(float /*dt*/) override {
+    void Loop(float /*dt*/) override {
         if (ark::Input::GetKeyDown(GLFW_KEY_ESCAPE)) {
             glfwSetWindowShouldClose(
                 ark::EngineBase::Get().GetWindow()->GetNativeHandle(), GLFW_TRUE);

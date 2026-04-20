@@ -68,18 +68,18 @@ void AObject::SetDontDestroy(bool dontDestroy) {
     }
 }
 
-void AObject::TickComponents(float dt) {
+void AObject::LoopComponents(float dt) {
     for (auto& comp : components_) {
         if (comp->IsEnabled()) {
-            comp->Tick(dt);
+            comp->Loop(dt);
         }
     }
 }
 
-void AObject::PostTickComponents(float dt) {
+void AObject::PostLoopComponents(float dt) {
     for (auto& comp : components_) {
         if (comp->IsEnabled()) {
-            comp->PostTick(dt);
+            comp->PostLoop(dt);
         }
     }
 }
