@@ -68,4 +68,18 @@ const std::vector<Camera*>& Camera::GetAllCameras() {
     return allCameras_;
 }
 
+// -----------------------------------------------------------------------------
+// 反射注册 (v0.2 15.A)
+// 注意: projMatrix_/projDirty_ 是派生缓存，不序列化；aspect_ 由引擎按窗口尺寸写回。
+// -----------------------------------------------------------------------------
+ARK_REFLECT_COMPONENT(Camera)
+    ARK_FIELD(projType_,   "projection", EnumInt)
+    ARK_FIELD(fovDeg_,     "fov_deg",    Float)
+    ARK_FIELD(orthoSize_,  "ortho_size", Float)
+    ARK_FIELD(nearClip_,   "near_clip",  Float)
+    ARK_FIELD(farClip_,    "far_clip",   Float)
+    ARK_FIELD(priority_,   "priority",   Int)
+    ARK_FIELD(clearColor_, "clear_color", Color4)
+ARK_END_REFLECT(Camera)
+
 } // namespace ark

@@ -28,3 +28,4 @@ logs/
 build_log.txt
 cmake_log.txt
 vcpkg.json
+tmp/

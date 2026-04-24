@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/AComponent.h"
+#include "engine/core/TypeInfo.h"
 #include <glm/glm.hpp>
 #include <vector>
 
@@ -9,6 +10,8 @@ namespace ark {
 class Camera : public AComponent {
 public:
     enum class Projection { Perspective, Orthographic };
+
+    ARK_DECLARE_REFLECTION(Camera);
 
     void OnAttach() override;
     void OnDetach() override;

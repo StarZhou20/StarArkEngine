@@ -1,6 +1,7 @@
 // TextureLoader.cpp — stb_image-based texture loading
 #include "TextureLoader.h"
 #include "engine/debug/DebugListenBus.h"
+#include "engine/platform/Paths.h"
 
 #include <stb_image.h>
 
@@ -14,12 +15,16 @@ std::shared_ptr<RHITexture> TextureLoader::Load(RHIDevice* device,
         return nullptr;
     }
 
+    // v0.2 15.D — 走 MOD-aware VFS：mods/<name>/<logical> 优先，否则落回 content/
+    auto resolved = Paths::ResolveResource(filepath).string();
+
     stbi_set_flip_vertically_on_load(true); // OpenGL expects bottom-left origin
 
     int width = 0, height = 0, channels = 0;
-    unsigned char* data = stbi_load(filepath.c_str(), &width, &height, &channels, 0);
+    unsigned char* data = stbi_load(resolved.c_str(), &width, &height, &channels, 0);
     if (!data) {
-        ARK_LOG_ERROR("Rendering", "TextureLoader: failed to load '" + filepath + "': " + stbi_failure_reason());
+        ARK_LOG_ERROR("Rendering", "TextureLoader: failed to load '" + filepath +
+            "' (resolved: " + resolved + "): " + stbi_failure_reason());
         return nullptr;
     }
 

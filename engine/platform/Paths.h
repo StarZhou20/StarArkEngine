@@ -33,6 +33,16 @@ public:
     // may point into source tree instead.
     static std::filesystem::path ResolveContent(const std::string& relative);
 
+    // v0.2 15.D — MOD-aware VFS. Given a logical asset path (e.g. "textures/ground.png"),
+    // search each enabled mod under {Mods()}/<name>/ in load-order priority, then fall back
+    // to Content(). Returns the first existing file. If nothing matches, returns the
+    // Content() fallback anyway (caller will report the load failure).
+    //
+    // Load order is read from {Mods()}/load_order.toml on first call; use
+    // ReloadModOrder() to pick up changes. Cheap (filesystem::exists per candidate).
+    static std::filesystem::path ResolveResource(const std::string& logical);
+    static void ReloadModOrder();
+
     // Developer convenience: override Content() to point to a source dir
     // (so editing source assets takes effect without install). Called by
     // CMake-generated header or EngineConfig loader.

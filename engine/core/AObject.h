@@ -33,6 +33,11 @@ public:
     const std::string& GetName() const { return name_; }
     void SetName(const std::string& name) { name_ = name; }
 
+    // GUID (UUID v4) — 进程外持久身份，场景 TOML / MOD override / 跨会话引用都靠它。
+    // 缺省在构造时自动生成；反序列化场景时由 loader 调用 SetGuid() 还原。
+    const std::string& GetGuid() const { return guid_; }
+    void SetGuid(const std::string& guid) { guid_ = guid; }
+
     // --- Transform (built-in, mandatory) ---
     Transform& GetTransform() { return transform_; }
     const Transform& GetTransform() const { return transform_; }
@@ -57,6 +62,20 @@ public:
         static_assert(std::is_base_of_v<AComponent, T>, "T must derive from AComponent");
         auto comp = std::make_unique<T>(std::forward<Args>(args)...);
         T* raw = comp.get();
+        raw->owner_ = this;
+        components_.push_back(std::move(comp));
+        raw->OnAttach();
+        raw->PreInit();
+        raw->Init();
+        raw->PostInit();
+        return raw;
+    }
+
+    // 反射 / loader 用：接管一个已 make_unique 出来的组件实例。
+    // 与 AddComponent<T>() 等价，但不知道静态类型。
+    AComponent* AddComponentRaw(std::unique_ptr<AComponent> comp) {
+        if (!comp) return nullptr;
+        AComponent* raw = comp.get();
         raw->owner_ = this;
         components_.push_back(std::move(comp));
         raw->OnAttach();
@@ -102,6 +121,7 @@ private:
 
     uint64_t id_;
     std::string name_;
+    std::string guid_;
     Transform transform_;
     std::vector<std::unique_ptr<AComponent>> components_;
 

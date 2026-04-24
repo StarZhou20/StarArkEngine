@@ -20,6 +20,9 @@ add_custom_command(TARGET StarArkSamples POST_BUILD
 add_custom_command(TARGET StarArkSamples POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:StarArkSamples>/mods"
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:StarArkSamples>/logs"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/mods"
+        "$<TARGET_FILE_DIR:StarArkSamples>/mods"
 )
 
 # Deploy engine shaders next to the exe so ShaderManager can load + hot-reload them.

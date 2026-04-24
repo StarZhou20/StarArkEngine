@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string_view>
+
 namespace ark {
 
 class AObject;
@@ -18,6 +20,9 @@ public:
     virtual void PostInit() {}
     virtual void Loop(float dt) { (void)dt; }
     virtual void PostLoop(float dt) { (void)dt; }
+
+    // 反射支持：反射宏会 override 为字面类名。未反射组件返回空。
+    virtual std::string_view GetReflectTypeName() const { return {}; }
 
     void SetEnabled(bool enabled) { enabled_ = enabled; }
     bool IsEnabled() const { return enabled_; }

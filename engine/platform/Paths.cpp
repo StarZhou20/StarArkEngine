@@ -1,7 +1,12 @@
 // Paths.cpp
 #include "engine/platform/Paths.h"
+#include "engine/serialization/TomlDoc.h"
+#include "engine/debug/DebugListenBus.h"
 
 #include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <vector>
 
 #if defined(_WIN32)
 #  define WIN32_LEAN_AND_MEAN
@@ -85,6 +90,71 @@ fs::path Paths::UserData(const std::string& title) {
 
 fs::path Paths::ResolveContent(const std::string& relative) {
     return Content() / relative;
+}
+
+namespace {
+    std::vector<std::string> g_modLoadOrder;
+    bool                     g_modOrderLoaded = false;
+
+    void LoadModOrderImpl() {
+        g_modLoadOrder.clear();
+        g_modOrderLoaded = true;
+
+        fs::path p = Paths::Mods() / "load_order.toml";
+        std::error_code ec;
+        if (!fs::exists(p, ec)) return;
+
+        std::ifstream f(p, std::ios::binary);
+        if (!f) return;
+        std::stringstream ss;
+        ss << f.rdbuf();
+        std::string text = ss.str();
+
+        std::string err;
+        int errLine = 0;
+        auto doc = TomlDoc::Parse(text, &err, &errLine);
+        if (!doc) {
+            ARK_LOG_WARN("Paths",
+                std::string("load_order.toml parse error (line ") + std::to_string(errLine)
+                + "): " + err);
+            return;
+        }
+        const auto* aot = doc->Root().FindArrayOfTables("mod");
+        if (!aot) return;
+        for (std::size_t i = 0; i < aot->Size(); ++i) {
+            const auto& t = (*aot)[i];
+            bool enabled = true;
+            if (const auto* v = t.Find("enabled"); v && v->IsBool()) enabled = v->AsBool();
+            if (!enabled) continue;
+            const auto* n = t.Find("name");
+            if (!n || !n->IsString()) continue;
+            const std::string& name = n->AsString();
+            if (name.empty()) continue;
+            g_modLoadOrder.push_back(name);
+        }
+        ARK_LOG_INFO("Paths",
+            std::string("load_order.toml: ") + std::to_string(g_modLoadOrder.size()) + " mod(s) enabled");
+    }
+}
+
+fs::path Paths::ResolveResource(const std::string& logical) {
+    if (!g_modOrderLoaded) LoadModOrderImpl();
+
+    // Iterate mods in load order; last line wins per TOML convention — use reverse
+    // so later-listed mods override earlier ones (common mod-manager convention).
+    for (auto it = g_modLoadOrder.rbegin(); it != g_modLoadOrder.rend(); ++it) {
+        fs::path candidate = Mods() / *it / logical;
+        std::error_code ec;
+        if (fs::exists(candidate, ec) && !fs::is_directory(candidate, ec)) {
+            return candidate;
+        }
+    }
+    return Content() / logical;
+}
+
+void Paths::ReloadModOrder() {
+    g_modOrderLoaded = false;
+    LoadModOrderImpl();
 }
 
 void Paths::SetDevContentOverride(const fs::path& absolutePath) {

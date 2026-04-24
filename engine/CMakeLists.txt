@@ -5,6 +5,7 @@ file(GLOB_RECURSE ENGINE_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/rhi/opengl/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/core/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/rendering/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/serialization/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb/*.cpp"
 )
 

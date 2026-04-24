@@ -34,18 +34,18 @@ public:
             return;
         }
 
-        // Use the first sub-mesh
-        auto* mr = AddComponent<ark::MeshRenderer>();
-        mr->SetMesh(nodes[0].mesh);
-        nodes[0].material->SetMetallic(0.3f);
-        nodes[0].material->SetRoughness(0.4f);
-        nodes[0].material->SetAO(1.0f);
-        mr->SetMaterial(nodes[0].material);
+        // Attach one MeshRenderer per sub-mesh so the whole model is rendered,
+        // not just nodes[0]. All sub-meshes share this object's Transform (FBX
+        // sub-meshes are typically pre-baked into model space).
+        for (auto& node : nodes) {
+            if (!node.mesh || !node.material) continue;
+            auto* mr = AddComponent<ark::MeshRenderer>();
+            mr->SetMesh(node.mesh);
+            mr->SetMaterial(node.material);
+        }
 
         GetTransform().SetLocalPosition(pos_);
         GetTransform().SetLocalScale(glm::vec3(scale_));
-
-        AddComponent<Rotator>()->SetSpeed(0.0f);
 
         ARK_LOG_INFO("Core", "ModelObject loaded '" + filepath_ + "' (" +
                      std::to_string(nodes.size()) + " meshes)");

@@ -54,18 +54,129 @@ content/
 
 ### 候选 Phase（v0.2+）
 
-| Phase | 主题 | 动机 |
+**优先级重构（2026-04）**: 根据"面向 Skyrim 级 MOD 生态"的目标倒推，以下顺序绝对不可调：
+**数据契约永远是地基**，渲染纵深 / 脚本 / 动画 / 编辑器 GUI 全部建立在它之上。
+
+| Phase | 里程碑 | 主题 | 为什么是这个顺序 |
+|-------|-------|------|-----------------|
+| 15.A | v0.2 | 组件反射系统 | 没反射，所有序列化都是手工活；有反射，Inspector/TOML/schema 全免费 |
+| 15.B | v0.2 | GUID + 对象身份 | MOD load order + record override 的唯一基础（xEdit/Wrye Bash 的核心机制） |
+| 15.C | v0.2 | 场景 TOML 序列化 | 延续 Phase 14 的 SceneSerializer 成功经验，范围扩到所有组件 + 对象 |
+| 15.D | v0.2 | 资源覆盖 VFS | `mods/` 覆盖 `content/`；贴图/模型/shader 换皮 MOD 立刻可做，成本极低 |
+| **v0.2 tag**：理论可 MOD 的最小引擎 |||
+| 15.E | v0.2.x | 反射驱动 Inspector | 把 Lighting Tuner 升级为"任意组件自动出 UI"；编辑器免费拿 |
+| 15.F | v0.2.x | C# 脚本（CoreCLR） | 解锁 MOD 改行为；前置是 15.A 反射（否则 C# 访问不了组件） |
+| 16 | v0.3 | 级联阴影 CSM | 开放世界远景阴影必备，但必须在 RenderSettings 反射之后加（不然 MOD 改不了参数） |
+| 17 | v0.3 | `.ark.mesh` + Asset 管线（hash/缓存） | 支撑大量资产；依赖 15.D 的 VFS |
+| 18 | v0.3 | Blender exporter 插件 | 依赖 15.C 的 TOML schema |
+| 19 | v0.3 | Prefab / 场景 chunk | 开放世界流式加载的前置；依赖 15.B GUID |
+| 20 | v0.4 | 骨骼动画 + 动画状态机 | 角色 MOD 刚需；依赖 15.A 反射（不然 anim clip 名字是写死 enum） |
+| 21 | v0.4 | 物理（Bullet/Jolt） | - |
+| 22 | v0.4 | Recast/Detour 导航 | - |
+| 23 | v0.5 | 流式加载 + camera-relative rendering | 解决 float 精度 + 大世界加载；依赖 19 |
+| 24 | v0.5 | 行为树 `.bt.toml` + 对话 `.dlg.toml` | AI 写 NPC；依赖 15.F |
+| 25+ | v1.0 | LOD / Impostor / 音频 / 多人 | 内容扩张期 |
+
+### v0.2-data-contract 详细规划（当前开工目标）
+
+目标: **理论上任何 MOD 都能修改到的最小引擎**。没有 GUI 编辑器，没有脚本，但已经可以：
+
+1. 替换任意贴图 / 模型 / shader（把文件丢进 `mods/<modname>/...`）
+2. 修改任意场景对象的任意组件字段（编辑 TOML，外部工具或文本编辑器）
+3. 新增对象 / 组件实例（TOML 里加一段）
+4. 两个 MOD 同改一个对象 = 后加载的覆盖（基于 GUID）
+
+#### 关键设计决策
+
+**反射（15.A）**:
+- C++ 宏 + 静态注册表，不用 RTTI 之外的运行时魔法
+- 每个 `AComponent` 子类写 `ARK_REFLECT_COMPONENT_BEGIN(Light)` ... `ARK_REFLECT_FIELD(intensity, Float)` ... `ARK_REFLECT_COMPONENT_END()`
+- `TypeRegistry::Create("Light")` → `unique_ptr<AComponent>`
+- `TypeRegistry::GetFields("Light")` → `std::span<const FieldInfo>`；每个 `FieldInfo` 有 name / type / offset / default
+- 字段类型枚举: `Bool / Int / Float / Vec2 / Vec3 / Vec4 / Color3 / Color4 / Quat / String / EnumInt / AssetPath`
+- 读写通过 `offset + type tag + memcpy` 完成，无虚函数开销
+
+**GUID（15.B）**:
+- UUID v4，文本形式 `"a1b2c3d4-5e6f-7a8b-9c0d-e1f2a3b4c5d6"`
+- `AObject::GetGuid()` 返回 `const std::string&`；`CreateObject<T>()` 自动生成
+- 从 TOML 反序列化时使用文件里的 GUID，不生成新的
+- 引用其他对象: 字段类型 `ObjectRef`，序列化为 GUID 字符串；runtime 解析为 `AObject*`
+
+**场景 TOML（15.C）**:
+
+```toml
+[scene]
+name = "Village_Chunk_0_0"
+schema_version = 1
+
+[[objects]]
+guid = "a1b2c3d4-..."
+name = "Campfire_01"
+parent = ""  # empty or parent GUID
+transform.position = [2.3, 0.0, 1.5]
+transform.rotation = [0.0, 0.0, 0.0, 1.0]  # quat xyzw
+transform.scale    = [1.0, 1.0, 1.0]
+
+[[objects.components]]
+type = "MeshRenderer"
+mesh     = "content://meshes/campfire.obj"
+material = "content://materials/wood.mat.toml"
+
+[[objects.components]]
+type = "Light"
+light_type = "Point"
+color = [1.0, 0.5, 0.2]
+intensity = 8.0
+range = 5.0
+```
+
+- **组件表展开**: 一个对象的所有组件平铺，不嵌套；AI 修改一个组件不影响其他
+- **schema_version**: 将来升级字段时可批量迁移
+- **资源引用**: 用 URL-like 前缀（`content://`, `mods://`, `abs://`）；runtime 走 VFS 解析
+
+**资源覆盖 VFS（15.D）**:
+
+- `Paths::ResolveResource("textures/foo.png")` 新增方法
+- 查找顺序（后加载优先）:
+  1. `mods/<mod_1>/textures/foo.png`（按 load order 从高到低）
+  2. `mods/<mod_2>/textures/foo.png`
+  3. `content/textures/foo.png`（原版）
+- `mods/load_order.toml` 文件声明启用的 MOD 和顺序（Skyrim `plugins.txt` 等价物）
+- 覆盖只是路径替换，**不涉及合并逻辑**；合并冲突留给 15.C 的 GUID override（编辑同一个对象时后加载的胜出）
+
+#### v0.2 tag 的验收标准
+
+1. ✅ `CottageScene` 改为从 `content/scenes/cottage.toml` 加载，而非 C++ 硬编码
+2. ✅ 改 `cottage.toml` 里 Light 的 intensity → 重启后生效（mtime 热重载可选，不阻塞）
+3. ✅ 把 `mods/testmod/textures/ground.png` 丢进去 → 地面贴图被替换
+4. ✅ AI 读 `docs/` 就能写出一个新的 `.toml` 场景，不需要写一行 C++
+5. ✅ 两个 MOD 改同一个 Light GUID，后加载的胜出（日志打印 override chain）
+
+### 长期路径上的"不做"（v0.2 范围外）
+
+- GUI 关卡编辑器（Blender 空间布局 + WPF Inspector 表单，够用了）
+- 自研 3D 建模 / 动画编辑
+- 自研 UI 设计器
+- ECS 切换（OOP Component + 反射 = 类 ECS 优势，但不打破现有 API）
+- Lua / Python 脚本（单语言路线，C# 够用）
+
+---
+
+### 历史草案（已弃用）
+
+> 以下是 v0.1 冻结前的旧 Roadmap 表格草案，保留仅作历史参考。实际顺序以上面表格为准。
+
+| Phase | 主题 | 备注 |
 |-------|------|------|
-| 15 | C# Scripting Host | 解锁 AI 写 gameplay |
-| 16 | 组件反射 + GUID | Schema 驱动的序列化/Inspector |
-| 17 | 通用场景 TOML + Blender 导出插件 | 验证数据契约 |
-| 18 | `.ark.mesh` 二进制 + Asset 管线 | 支撑内容量 |
-| 19 | Prefab + 场景 chunk 切分 | 流式加载前置 |
-| 20 | 行为树（`.bt.toml`） | AI 写 NPC |
-| 21 | 动画状态机（`.asm.toml`） | - |
-| 22 | Recast/Detour 导航 | - |
-| 23 | 流式加载 + camera-relative | 大世界 |
-| 24+ | LOD/Impostor、物理、音频、联机 | - |
+| ~~15 C# Scripting Host~~ | 改为 15.F，放到 v0.2.x（反射之后） |
+| ~~16 组件反射 + GUID~~ | 提前到 15.A-B，列为 v0.2 核心 |
+| ~~17 TOML + Blender 导出~~ | 拆成 15.C 和 18，Blender 插件后置到 v0.3 |
+| ~~18 .ark.mesh~~ | 移到 v0.3 |
+| ~~19 Prefab + chunk~~ | 移到 v0.3 |
+| ~~20 行为树~~ | 移到 v0.5，依赖 15.F 脚本 |
+| ~~21 动画状态机~~ | 移到 v0.4 一起做 |
+| ~~22 导航~~ | v0.4 |
+| ~~23 流式加载~~ | v0.5 |
 
 ### 有意识**不做**
 

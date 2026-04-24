@@ -2,6 +2,7 @@
 #include "ModelLoader.h"
 #include "TextureLoader.h"
 #include "engine/debug/DebugListenBus.h"
+#include "engine/platform/Paths.h"
 
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -172,19 +173,21 @@ std::vector<ModelNode> ModelLoader::Load(RHIDevice* device,
     }
 
     Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(filepath,
+    // v0.2 15.D — MOD-aware VFS
+    auto resolved = Paths::ResolveResource(filepath).string();
+    const aiScene* scene = importer.ReadFile(resolved,
         aiProcess_Triangulate |
         aiProcess_GenNormals |
         aiProcess_FlipUVs |
         aiProcess_CalcTangentSpace);
 
     if (!scene || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) || !scene->mRootNode) {
-        ARK_LOG_ERROR("Rendering", "ModelLoader: failed to load '" + filepath + "': " +
-                      importer.GetErrorString());
+        ARK_LOG_ERROR("Rendering", "ModelLoader: failed to load '" + filepath +
+            "' (resolved: " + resolved + "): " + importer.GetErrorString());
         return nodes;
     }
 
-    std::string directory = GetDirectory(filepath);
+    std::string directory = GetDirectory(resolved);
 
     // Flatten all meshes from the scene (ignore node hierarchy for now)
     for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {

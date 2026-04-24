@@ -2,9 +2,10 @@
 // Runs the engine-dev demo scenes. Not part of the shipping game.
 //
 // Usage:
-//   StarArkSamples.exe            → DemoScene (PBR spheres + model)
+//   StarArkSamples.exe            → FBXDemoScene (Bistro, default)
+//   StarArkSamples.exe demo       → DemoScene (PBR spheres + model)
 //   StarArkSamples.exe cottage    → CottageScene (v0.1 minimal self-contained demo)
-//   StarArkSamples.exe fbx        → FBXDemoScene
+//   StarArkSamples.exe fbx        → FBXDemoScene (Bistro)
 #include "engine/core/EngineBase.h"
 #include "engine/debug/ConsoleDebugListener.h"
 #include "engine/debug/FileDebugListener.h"
@@ -26,10 +27,11 @@ int main(int argc, char** argv) {
 
     if (std::strcmp(pick, "cottage") == 0) {
         engine.Run<CottageScene>(1280, 720, "StarArk Samples — Cottage (v0.1)");
-    } else if (std::strcmp(pick, "fbx") == 0) {
-        engine.Run<FBXDemoScene>(1280, 720, "StarArk Samples — FBX Demo");
-    } else {
+    } else if (std::strcmp(pick, "demo") == 0) {
         engine.Run<DemoScene>(1280, 720, "StarArk Samples — PBR Demo");
+    } else {
+        // Default: Bistro FBX scene
+        engine.Run<FBXDemoScene>(1280, 720, "StarArk Samples — Bistro (FBX)");
     }
     return 0;
 }

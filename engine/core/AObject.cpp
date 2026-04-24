@@ -1,4 +1,5 @@
 #include "AObject.h"
+#include "engine/core/Guid.h"
 #include "engine/debug/DebugListenBus.h"
 
 namespace ark {
@@ -6,7 +7,7 @@ namespace ark {
 uint64_t AObject::nextId_ = 1;
 
 AObject::AObject()
-    : id_(nextId_++), name_("AObject"), transform_(this)
+    : id_(nextId_++), name_("AObject"), guid_(Guid::NewGuid()), transform_(this)
 {
 }
 

@@ -3,22 +3,33 @@
 ## Overview
 C++17/20 3D game framework, Unity-like architecture (AObject + Component composition), OpenGL rendering (GLEW) with RHI abstraction for future DX12.
 
-**Current milestone**: **v0.1-renderer** — a PBR rendering backend that can be driven entirely by its public C++ API. Not a full game engine. No editor, no scripting, no physics, no audio, no networking. See [docs/DevLog.md §0](docs/DevLog.md) and [docs/Capabilities.md](docs/Capabilities.md).
+**Current milestone**: **v0.2-data-contract** — 把引擎升级为"数据契约驱动的 MOD 基础"。
+v0.1-renderer（Phase 1–14，PBR 渲染后端）**已冻结**，作为 v0.2 的渲染底座。见 [docs/DevLog.md §0](docs/DevLog.md)。
 
-**Long-term vision** (Y+ open-data-contract + AI-friendly authoring) lives in [docs/Roadmap.md](docs/Roadmap.md). Do not let it bleed into v0.1 work.
+**Long-term vision** (Skyrim 级 MOD 生态 + AI-friendly authoring + 东方武侠开放世界) 在 [docs/Roadmap.md](docs/Roadmap.md)。
 
-## Key Decisions (v0.1 scope)
+## Key Decisions (v0.1 scope + v0.2 新增)
+
+### v0.1 (冻结，不变)
+
 - Language: C++20
 - Build: CMake + NMake + MSVC
-- Dependencies via FetchContent + local zips: GLFW, GLM, GLEW, Assimp, stb_image, spdlog
 - Rendering: OpenGL 4.5 Core (via GLEW), RHI abstraction retained for future DX12
 - Architecture: AScene owns AObject; AObject owns AComponent; Transform built-in on every AObject
-- Identity: `uint64_t id` auto-increment + `std::string name` (runtime-only, no persistent GUID in v0.1)
 - Memory: unique_ptr ownership; GetComponent<T>() returns raw T*
 - Error handling: `assert` + `ARK_LOG_FATAL` + `std::abort()`, no exceptions
 - Scene switch: deferred to end of frame
-- Content tuning: `content/lighting.json` with mtime hot reload (RenderSettings + Lights only)
-- Editor: **none shipped with engine**; an external WPF Lighting Tuner lives in `tools/LightingTuner/` and only edits `lighting.json`
+- Editor: **none shipped**; external WPF Lighting Tuner edits `lighting.json`
+
+### v0.2 (开发中)
+
+- **Reflection**: 宏 + 静态注册表 `TypeRegistry`；每个 `AComponent` 子类声明字段（name / type / offset / default）。不用 RTTI，不引入第三方反射库。
+- **Identity**: `AObject::guid_` 为 UUID v4 字符串；`CreateObject<T>()` 自动生成；从 TOML 加载使用文件里的 GUID。
+- **Data contracts**: TOML 文本 + 将来的 `.ark.*` 二进制伴随文件。Scene 文件组件表展开（不嵌套对象树）。资源引用用 URL-like 前缀（`content://` / `mods://`）。
+- **VFS**: `Paths::ResolveResource(path)` 按 load order 从 `mods/*/` → `content/` 查找；`mods/load_order.toml` 声明启用顺序。
+- **序列化**: 扩展 Phase 14 的 `SceneSerializer`；新增 `SceneLoader`（TOML → Scene）和 `SceneWriter`（Scene → TOML）。
+- **Scripting（v0.2.x）**: C# (.NET 10) via CoreCLR hosting。v0.2 不做，先让反射 + 序列化落地。
+- **编辑器策略**: 仍然**不做**一体化 GUI 编辑器；WPF 做反射驱动的 Inspector，Blender 做空间布局，所有工具共享同一 TOML 契约。
 
 ## Architecture Layers
 

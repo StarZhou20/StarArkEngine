@@ -5,9 +5,42 @@
 
 ---
 
-## 0. 当前里程碑：v0.1-renderer（开发中）
+## 0. 当前里程碑：v0.2-data-contract（**开发中**）
 
-**目标定位**: StarArkEngine v0.1 是一个**可被 AI 直接调用的 PBR 渲染后端**。不是"完整游戏引擎"，
+**目标定位**: 把引擎从"API 驱动的 PBR 后端"升级为"**数据契约驱动的 MOD 基础**"。
+对标 Skyrim/Creation Engine 的 MOD 生态基础（ESP/ESM record override + load order + 资源路径覆盖），
+但契约本身是 TOML 文本而非专有二进制。
+
+**为什么是这个，不是"继续做渲染"或"开始写编辑器"**:
+
+- Skyrim 级 MOD 生态 90% 靠的不是编辑器、也不是超强渲染器，而是**稳定的数据契约 + 资源覆盖层 + GUID 引用**
+- 如果先做渲染纵深（CSM / 大世界坐标 / streaming），每加一个功能就是"又一个 MOD 改不了的硬编码"，v0.3 做反射时全部推倒重改
+- 如果先做编辑器 GUI，相当于把引擎内部 `unique_ptr<AObject>` 这种数据结构写死到编辑器里，AI 读不懂，MOD 工具链对接不上
+- 先做反射 + TOML + VFS，编辑器是反射的"副产品"（WPF Lighting Tuner 已经验证过这套模式）
+
+**v0.2 拆解**（详见 [Roadmap.md](Roadmap.md)）:
+
+| 阶段 | 产物 | 状态 |
+|------|------|------|
+| 15.A | 组件反射系统（TypeRegistry + FieldInfo） | 🚧 开工 |
+| 15.B | GUID + `AObject::GetGuid()` | ⏳ |
+| 15.C | 场景 TOML 序列化（全组件覆盖） | ⏳ |
+| 15.D | 资源覆盖 VFS（`mods/` 覆盖 `content/`） | ⏳ |
+| **v0.2 tag**: 理论可 MOD 的最小引擎 |||
+| 15.E | 反射驱动 Inspector（WPF） | ⏳ v0.2.x |
+| 15.F | C# 脚本宿主（CoreCLR） | ⏳ v0.2.x |
+
+**v0.2 验收**（5 条，全部可被 AI 验证）:
+
+1. `CottageScene` 改为从 `content/scenes/cottage.toml` 加载，不写 C++
+2. 改 TOML 里 Light intensity → 重启后生效
+3. `mods/testmod/textures/ground.png` → 地面贴图被替换
+4. AI 只读 `docs/` 能写出一个新的 `.toml` 场景
+5. 两 MOD 同改同 GUID，后加载的胜出，日志打印 override chain
+
+---
+
+## 0.1 上个里程碑：v0.1-renderer（已冻结 2026-04）**目标定位**: StarArkEngine v0.1 是一个**可被 AI 直接调用的 PBR 渲染后端**。不是"完整游戏引擎"，
 也不是"开发中的开放世界平台"，而是一个**已经冻结的渲染器 SDK**。
 
 **成功判据**（唯一判据）:  

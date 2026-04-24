@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/AComponent.h"
+#include "engine/core/TypeInfo.h"
 #include <glm/glm.hpp>
 #include <vector>
 
@@ -9,6 +10,8 @@ namespace ark {
 class Light : public AComponent {
 public:
     enum class Type { Directional, Point, Spot };
+
+    ARK_DECLARE_REFLECTION(Light);
 
     void OnAttach() override;
     void OnDetach() override;

@@ -1,0 +1,6 @@
+# mods/load_order.toml — enabled mods in priority order.
+# 同路径资源：后列出的 mod 会覆盖先列出的；content/ 始终是最后回退。
+
+[[mod]]
+name = "testmod"
+enabled = true
