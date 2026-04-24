@@ -1,19 +1,24 @@
 # Plan: StarArk 3D Game Framework
 
 ## Overview
-C++17/20 3D game framework, Unity-like architecture (AObject + Component composition), OpenGL rendering (GLEW) with RHI abstraction for future DX12. Blender as external scene editor, no built-in editor. Auto-maintained architecture docs for AI coding assistant readability.
+C++17/20 3D game framework, Unity-like architecture (AObject + Component composition), OpenGL rendering (GLEW) with RHI abstraction for future DX12.
 
-## Key Decisions
-- Language: C++17/20
-- Build: CMake
-- AI-Friendly: docs/DevLog.md (工程记录) + docs/API.md (API 文档) for AI coding assistants
-- Component: GetComponent<T>() dynamic pattern (returns T* raw pointer, no ownership)
-- Rendering: OpenGL (GLEW) first, RHI abstraction for DX12 future
-- Transform: built-in on every AObject (mandatory, not a component)
-- AObject identity: uint64_t id (auto-increment) + std::string name (user-settable), both with getters
-- Memory: unique_ptr ownership (AScene owns AObject, AObject owns AComponent)
-- Error handling: assert + ARK_LOG_FATAL (no exceptions)
+**Current milestone**: **v0.1-renderer** — a PBR rendering backend that can be driven entirely by its public C++ API. Not a full game engine. No editor, no scripting, no physics, no audio, no networking. See [docs/DevLog.md §0](docs/DevLog.md) and [docs/Capabilities.md](docs/Capabilities.md).
+
+**Long-term vision** (Y+ open-data-contract + AI-friendly authoring) lives in [docs/Roadmap.md](docs/Roadmap.md). Do not let it bleed into v0.1 work.
+
+## Key Decisions (v0.1 scope)
+- Language: C++20
+- Build: CMake + NMake + MSVC
+- Dependencies via FetchContent + local zips: GLFW, GLM, GLEW, Assimp, stb_image, spdlog
+- Rendering: OpenGL 4.5 Core (via GLEW), RHI abstraction retained for future DX12
+- Architecture: AScene owns AObject; AObject owns AComponent; Transform built-in on every AObject
+- Identity: `uint64_t id` auto-increment + `std::string name` (runtime-only, no persistent GUID in v0.1)
+- Memory: unique_ptr ownership; GetComponent<T>() returns raw T*
+- Error handling: `assert` + `ARK_LOG_FATAL` + `std::abort()`, no exceptions
 - Scene switch: deferred to end of frame
+- Content tuning: `content/lighting.json` with mtime hot reload (RenderSettings + Lights only)
+- Editor: **none shipped with engine**; an external WPF Lighting Tuner lives in `tools/LightingTuner/` and only edits `lighting.json`
 
 ## Architecture Layers
 

@@ -1,7 +1,47 @@
 # StarArk 工程开发日志 (DevLog)
 
 > **用途**: 供 AI 编码助手阅读，快速了解项目当前状态、已完成内容、待办事项和技术约束。  
-> **最后更新**: 2026-04-24
+> **最后更新**: 2026-04-25
+
+---
+
+## 0. 当前里程碑：v0.1-renderer（开发中）
+
+**目标定位**: StarArkEngine v0.1 是一个**可被 AI 直接调用的 PBR 渲染后端**。不是"完整游戏引擎"，
+也不是"开发中的开放世界平台"，而是一个**已经冻结的渲染器 SDK**。
+
+**成功判据**（唯一判据）:  
+> **一个陌生的 AI 或陌生开发者，只读 `docs/` 目录，就能写出可运行的 demo。不需要问作者任何问题。**
+
+**v0.1 范围**（= 已实现的 Phase 1–14）:
+
+- Platform: GLFW 窗口 + OpenGL 4.5 Core + Input + Time + 日志
+- 架构: AScene / AObject / AComponent + Transform + 14 步主循环
+- RHI: 抽象接口 + OpenGL 后端
+- 渲染: Forward + PBR（Cook-Torrance）+ sRGB + ACES Hill + 多贴图（albedo/normal/MR/AO/emissive）
+- 资源: Assimp（OBJ/FBX/glTF）+ stb_image（PNG/JPG/...）+ 16× 各向异性
+- 光照: 方向光/点光/聚光灯 + 物理光衰减 + IBL（irradiance + prefilter + BRDF LUT）
+- 阴影: 方向光 shadow map + 5×5 PCF
+- 后处理: HDR FBO + Bloom（ping-pong Gauss）+ ACES Hill composite
+- Skybox: cubemap + 程序化渐变 fallback
+- Shader: ShaderManager 文件加载 + mtime 热重载 + 嵌入 fallback
+- Tuning: `content/lighting.json` + mtime 热重载 + WPF Lighting Tuner 工具
+
+**v0.1 不包含**（明确画线）:
+
+- 任何脚本语言（C#/Lua/Python）
+- 场景对象序列化（只有 RenderSettings + Light 序列化）
+- 物理 / 碰撞
+- 骨骼动画 / 动画状态机
+- 音频
+- 网络 / 多人
+- 编辑器 GUI / 运行时 Inspector
+- Prefab 系统
+- Streaming / 大世界
+
+v0.1 之后的远期设想全部移至 [Roadmap.md](Roadmap.md)，与当前主线解耦。
+
+**v0.1 冻结前的任务清单**: 见 §5"v0.1 收官清单"。
 
 ---
 
@@ -381,46 +421,34 @@ StarArk/
 
 ---
 
-## 5. 未完成 / 待开发
+## 4.5 长期路线（摘要）
 
-### 高优先级（核心功能缺失）
+本节已迁移至 [Roadmap.md](Roadmap.md)。v0.1-renderer 里程碑期内不做远景开发；本文件只维护到 v0.1 冻结为止的进度与约定。
 
-| 编号 | 功能 | 描述 | 状态 |
-|------|------|------|------|
-| **F1** | ~~纹理加载~~ | stb_image 集成，支持 PNG/JPG 加载到 RHITexture | ✅ 已完成 |
-| **F2** | ~~模型加载~~ | Assimp 5.4.3 集成，OBJ/FBX/glTF 导入为 Mesh + Material | ✅ 已完成 |
-| **F3** | ~~多光源渲染~~ | 支持方向光/点光/聚光灯多光源叠加 | ✅ 已完成 |
-| **F4** | ~~PBR 渲染~~ | Cook-Torrance BRDF，metallic-roughness 工作流 | ✅ 已完成 |
-| **F5** | ~~渲染排序~~ | 按 shader/material 指针排序 MeshRenderer，减少状态切换 | ✅ 已完成 |
-| **F6** | ~~Pipeline 缓存~~ | FNV-1a 哈希缓存，避免每帧重建 Pipeline/VAO | ✅ 已完成 |
+---
 
-### 中优先级（完善功能）
+## 5. v0.1 收官清单（冻结前必须做完的事）
 
-| 编号 | 功能 | 描述 | 状态 |
-|------|------|------|------|
-| **M1** | ~~ShaderManager + 热重载~~ | 文件加载 GLSL + mtime 轮询在原 program 上重编 | ✅ 已完成 |
-| **M2** | ~~引擎/游戏分层 + Paths~~ | engine/game/samples 三分架构，运行时路径 | ✅ 已完成 (Phase G) |
-| **M3** | ~~sRGB + ACES + 物理光衰减~~ | 颜色空间 + ACES Filmic + 1/r² 衰减 | ✅ 已完成 (Phase 8) |
-| **M4** | ~~多贴图 PBR + 法线贴图~~ | tangent 属性、MR/AO/Normal/Emissive 贴图 | ✅ 已完成 (Phase 9) |
-| **M5** | ~~HDR FBO + Bloom~~ | RGBA16F 浮点缓冲 + 亮度提取 + 高斯 ping-pong + ACES 合成 | ✅ 已完成 (Phase 10) |
-| **M6** | ~~Skybox~~ | 立方体贴图天空盒 + 程序化渐变 fallback | ✅ 已完成 (Phase 11) |
-| **M7** | IBL | HDR 环境探针：辐照图 + 预过滤镜 + BRDF LUT | ✅ 已完成 (Phase 12) |
-| **M8** | Shadow Mapping | 方向光 PSSM / 级联阴影 | ✅ 已完成 Phase 13（单层 shadow map + 5×5 PCF；CSM 推后）|
-| **M9** | ResourceManager | 统一缓存 Mesh/Material/Texture（Shader 已归 M1） |  |
-| **M10** | 场景序列化 | JSON/二进制场景加载 | ⏳ 雏形已落地 Phase 14（RenderSettings + Lights JSON + mtime 热重载）；完整场景图/Mesh/Material 序列化待后续 |
-| **M11** | 物理系统 | 碰撞 + 刚体（Bullet/Jolt 候选） |  |
-| **M12** | 音频系统 | OpenAL/miniaudio |  |
+v0.1-renderer 的定位是**交付一个可被 AI 直接调用的 PBR 渲染后端**。Phase 1–14 的功能代码已经到位；
+剩下的工作全部是**稳定化 + 文档化**。完成后打 git tag `v0.1-renderer` 冻结。
 
-### 低优先级（优化 & 工具）
+| # | 任务 | 产物 | 状态 |
+|---|------|------|------|
+| S1 | 能力清单 | [docs/Capabilities.md](Capabilities.md) —— 引擎能做什么、不能做什么、需要什么输入 | ⏳ |
+| S2 | 已知问题清单 | [docs/KnownIssues.md](KnownIssues.md) —— 技术债、性能边界、已知 bug | ⏳ |
+| S3 | 公共 API 稳定化 | [docs/API.md](API.md) 与实际代码对齐，标注 stable / internal，函数签名不会再动 | ⏳ |
+| S4 | README 定位改写 | `README.md` 写清"v0.1 是什么 / 不是什么 / 如何调用" | ⏳ |
+| S5 | 最小完整样例（Cottage Scene） | `samples/` 里一个场景：FBX 小屋 + 地面 + 方向光 + 2 点光 + skybox + bloom + 阴影。**只用公共 API**，证明 v0.1 是自洽的 | ✅ [samples/src/scenes/CottageScene.{h,cpp}](../samples/src/scenes/CottageScene.cpp) |
+| S6 | 构建指南 | 任何陌生机器按 [docs/Build.md](Build.md)（待建或合并进 README）一次成功 | ✅ 已合并进 [README.md](../README.md) "构建环境要求" |
+| S7 | git tag `v0.1-renderer` | 前 6 项完成后打 tag，之后进入维护模式，不再加新功能直到路线 Y+ 启动 | ⏳ 由作者手动打 tag（文档/代码已就绪） |
 
-| 编号 | 功能 | 描述 |
-|------|------|------|
-| **L1** | DX12 后端 | RHI 的 DirectX 12 实现 |
-| **L2** | 多线程渲染 | 命令缓冲区在工作线程录制，主线程提交 |
-| **L3** | GPU Instancing | 批量绘制相同 Mesh 的对象 |
-| **L4** | 性能 Profiler | 帧时间分解、GPU 计时器、内存追踪 |
-| **L5** | ImGui 集成 | 运行时调试 UI |
-| **L6** | Blender 导出插件 | 自定义导出器，直接生成 StarArk 场景格式 |
+**不做**（刻意排除）：脚本系统、场景对象序列化、反射、编辑器、物理、动画、音频、联机——全部留给 v0.2+。
+
+### 已提前落地的远期准备（可以不动，也不承诺 API 稳定）
+
+Phase 14 的 `SceneSerializer` 只序列化 `RenderSettings + Light`，是为了解锁 WPF Lighting Tuner 这个**外部工具用例**。
+它是 v0.1 的一部分。**但不等于"场景序列化"已实现**——AObject/MeshRenderer/Material/Mesh 还没有序列化。
+完整场景序列化属于 v0.2+（见 Roadmap）。
 
 ---
 

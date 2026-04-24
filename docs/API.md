@@ -3,6 +3,18 @@
 > **命名空间**: `ark::`  
 > **C++ 标准**: C++20  
 > **头文件路径约定**: `#include "engine/模块/文件.h"`
+>
+> **稳定性**: 本文件描述 **v0.1-renderer** 的公共 API。以下条目在 v0.1 tag 后**签名不再变动**
+> （只会加新重载 / 新字段，不会改已有函数参数）：
+>
+> - §1 `EngineBase` / §2 `SceneManager` + `AScene` / §3 `AObject` + `AComponent` + `Transform`
+> - §4.1 Camera / §4.2 Light / §4.3 Mesh / §4.4 Material / §4.5 MeshRenderer
+> - §4.6 ForwardRenderer（public getters/setters；`RenderFrame` 内部逻辑不稳定）
+> - §4.8 TextureLoader / §4.9 ModelLoader / §4.11 ShaderManager / §4.15 RenderSettings / §4.17 SceneSerializer
+> - §5 Window / Input / Time / Paths
+>
+> **不稳定 / 内部**: §4.10 ShaderSources、§4.12 PostProcess、§4.13 Skybox、§4.14 IBL、§4.16 ShadowMap
+> ——这些是引擎内部使用的单件，未来可能重构。不要在 game/ 里直接引用。
 
 ---
 
@@ -38,6 +50,7 @@
   - [5.1 Window](#51-window)
   - [5.2 Input](#52-input)
   - [5.3 Time](#53-time)
+  - [5.4 Paths](#54-paths)
 - [6. 调试日志](#6-调试日志)
   - [6.1 DebugListenBus & 日志宏](#61-debuglistenbus--日志宏)
   - [6.2 IDebugListener](#62-idebuglistener)
@@ -76,7 +89,7 @@
 | `GetRHIDevice()` | 返回 `RHIDevice*` |
 | `GetSceneManager()` | 返回 `SceneManager*` |
 | `GetRenderer()` | 返回 `ForwardRenderer*` |
-| `AcceptPersistentObject(unique_ptr<AObject>, bool needsInit)` | 内部方法，接受从场景转移来的持久对象 |
+| `AcceptPersistentObject(unique_ptr<AObject> obj, bool isPending)` | 内部方法，接受从场景转移来的持久对象（`isPending=true` → 进 PendingList 等待 Init） |
 
 ### 主循环（14 步）
 
@@ -403,7 +416,7 @@ enum class Light::Type { Directional, Point, Spot };
 |------|--------|------|
 | `Mesh::CreateCube()` | `unique_ptr<Mesh>` | 创建单位立方体（含法线、UV、tangent） |
 | `Mesh::CreatePlane(float size = 10.0f)` | `unique_ptr<Mesh>` | 创建地面平面（含 tangent） |
-| `Mesh::CreateSphere(int sectors = 36, int stacks = 18)` | `unique_ptr<Mesh>` | 创建 UV 球体（Y-up，含 tangent） |
+| `Mesh::CreateSphere(int sectorCount = 36, int stackCount = 18)` | `unique_ptr<Mesh>` | 创建 UV 球体（Y-up，含 tangent） |
 
 > **注意**: `CreateCube()` / `CreatePlane()` / `CreateSphere()` 只创建 CPU 端数据，需调用 `Upload(device)` 上传到 GPU。
 >
@@ -922,6 +935,25 @@ GLFW 窗口封装，创建 OpenGL 4.5 Core 上下文。
 | `Time::DeltaTime()` | `float` | 上一帧到当前帧的时间差（秒） |
 | `Time::TotalTime()` | `float` | 引擎启动以来的总时间（秒） |
 | `Time::FrameCount()` | `uint64_t` | 总帧数 |
+
+---
+
+### 5.4 Paths
+
+**头文件**: `#include "engine/platform/Paths.h"`
+
+静态路径类。所有路径以 exe 所在目录为锚点，而非 cwd。
+
+| 方法 | 返回值 | 说明 |
+|------|--------|------|
+| `Paths::Init(const char* argv0 = nullptr)` | `void` | **必须**在 `main()` 第一行调用一次；Windows 下优先用 `GetModuleFileNameW` |
+| `Paths::GameRoot()` | `const std::filesystem::path&` | 可执行文件所在目录 |
+| `Paths::Content()` | `std::filesystem::path` | `{GameRoot}/content` — 随游戏分发的资产 |
+| `Paths::Mods()` | `std::filesystem::path` | `{GameRoot}/mods` — 玩家 mod 目录 |
+| `Paths::Logs()` | `std::filesystem::path` | `{GameRoot}/logs` — 运行时日志 |
+| `Paths::UserData(title)` | `std::filesystem::path` | `%APPDATA%/StarArk/{title}` — 存档/设置/shader 缓存 |
+| `Paths::ResolveContent("models/foo.obj")` | `std::filesystem::path` | 把 content 相对路径解析为实际文件系统路径 |
+| `Paths::SetDevContentOverride(abs)` | `void` | 开发期把 `Content()` 重定向到源码树 |
 
 ---
 
