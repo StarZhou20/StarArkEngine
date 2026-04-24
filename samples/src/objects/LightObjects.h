@@ -33,7 +33,9 @@ public:
         auto* light = AddComponent<ark::Light>();
         light->SetType(ark::Light::Type::Point);
         light->SetColor(glm::vec3(0.4f, 0.7f, 1.0f));
-        light->SetIntensity(1.5f);
+        // With physical 1/r^2 attenuation, point lights need higher intensity
+        // to match perceived brightness. Think of this as "light unit power".
+        light->SetIntensity(10.0f);
         light->SetRange(15.0f);
 
         auto* orbiter = AddComponent<Orbiter>();
@@ -51,7 +53,7 @@ public:
         auto* light = AddComponent<ark::Light>();
         light->SetType(ark::Light::Type::Spot);
         light->SetColor(glm::vec3(0.2f, 1.0f, 0.3f));
-        light->SetIntensity(2.0f);
+        light->SetIntensity(30.0f);
         light->SetRange(20.0f);
         light->SetSpotAngles(15.0f, 25.0f);
 

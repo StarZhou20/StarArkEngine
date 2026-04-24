@@ -13,7 +13,8 @@ public:
     GLTexture(const GLTexture&) = delete;
     GLTexture& operator=(const GLTexture&) = delete;
 
-    void Upload(int width, int height, int channels, const uint8_t* data) override;
+    void Upload(int width, int height, int channels, const uint8_t* data,
+                TextureFormat format = TextureFormat::sRGB_Auto) override;
     void Bind(int unit = 0) const override;
     int GetWidth() const override { return width_; }
     int GetHeight() const override { return height_; }

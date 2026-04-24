@@ -205,6 +205,7 @@ static const char* kPBR_VS = R"(
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aTexCoord;
+layout(location = 3) in vec3 aTangent;
 
 uniform mat4 uMVP;
 uniform mat4 uModel;
@@ -213,11 +214,24 @@ uniform mat4 uNormalMatrix;
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec2 vTexCoord;
+out vec3 vTangent;
+out vec3 vBitangent;
 
 void main() {
     vec4 worldPos = uModel * vec4(aPosition, 1.0);
     vWorldPos = worldPos.xyz;
-    vNormal = mat3(uNormalMatrix) * aNormal;
+
+    mat3 normalMat = mat3(uNormalMatrix);
+    vec3 N = normalize(normalMat * aNormal);
+    vec3 T = normalize(normalMat * aTangent);
+    // Re-orthogonalize tangent against normal (Gram-Schmidt), then build B.
+    T = normalize(T - dot(T, N) * N);
+    vec3 B = cross(N, T);
+
+    vNormal    = N;
+    vTangent   = T;
+    vBitangent = B;
+
     vTexCoord = aTexCoord;
     gl_Position = uMVP * vec4(aPosition, 1.0);
 }
@@ -229,6 +243,8 @@ static const char* kPBR_FS = R"(
 in vec3 vWorldPos;
 in vec3 vNormal;
 in vec2 vTexCoord;
+in vec3 vTangent;
+in vec3 vBitangent;
 
 out vec4 FragColor;
 
@@ -244,10 +260,15 @@ struct MaterialData {
     vec4  color;
     vec3  specular;
     float shininess;
-    int   hasDiffuseTex;
     float metallic;
     float roughness;
     float ao;
+    vec3  emissive;
+    int   hasDiffuseTex;
+    int   hasNormalTex;
+    int   hasMetalRoughTex;
+    int   hasAOTex;
+    int   hasEmissiveTex;
 };
 
 struct DirLight {
@@ -280,7 +301,12 @@ struct SpotLight {
 // ---------- uniforms ----------
 uniform MaterialData uMaterial;
 uniform vec3         uCameraPos;
+uniform float        uExposure;
 uniform sampler2D    uDiffuseTex;
+uniform sampler2D    uNormalTex;
+uniform sampler2D    uMetalRoughTex;
+uniform sampler2D    uAOTex;
+uniform sampler2D    uEmissiveTex;
 
 uniform int      uNumDirLights;
 uniform DirLight uDirLights[MAX_DIR_LIGHTS];
@@ -350,6 +376,17 @@ vec3 CookTorranceBRDF(vec3 L, vec3 V, vec3 N, vec3 albedo, float metallic, float
 
 // ---------- per-light-type helpers ----------
 
+// Physically-based point-light falloff:
+//   1 / (dist^2) with a smooth cutoff to zero at light.range.
+// Keeps energy well-behaved while letting lights have a finite
+// "range" for culling / artistic control.
+float PhysicalAttenuation(float dist, float range) {
+    float atten = 1.0 / max(dist * dist, 0.0001);
+    // fade smoothly in the last 25% of the range
+    float fade = 1.0 - smoothstep(range * 0.75, range, dist);
+    return atten * fade;
+}
+
 vec3 CalcDirLightPBR(DirLight light, vec3 N, vec3 V, vec3 albedo, float metallic, float roughness) {
     vec3 L = normalize(-light.direction);
     vec3 Lo = CookTorranceBRDF(L, V, N, albedo, metallic, roughness, light.color);
@@ -363,8 +400,7 @@ vec3 CalcPointLightPBR(PointLight light, vec3 N, vec3 V, vec3 fragPos, vec3 albe
     if (dist > light.range) return vec3(0.0);
 
     vec3 L = toLight / dist;
-    float atten = 1.0 / (light.constant + light.linear * dist + light.quadratic * dist * dist);
-    vec3 radiance = light.color * atten;
+    vec3 radiance = light.color * PhysicalAttenuation(dist, light.range);
 
     return CookTorranceBRDF(L, V, N, albedo, metallic, roughness, radiance);
 }
@@ -381,23 +417,54 @@ vec3 CalcSpotLightPBR(SpotLight light, vec3 N, vec3 V, vec3 fragPos, vec3 albedo
     float spotIntensity = clamp((theta - light.outerCutoff) / epsilon, 0.0, 1.0);
     if (spotIntensity <= 0.0) return vec3(0.0);
 
-    float atten = 1.0 / (light.constant + light.linear * dist + light.quadratic * dist * dist);
-    vec3 radiance = light.color * atten * spotIntensity;
+    vec3 radiance = light.color * PhysicalAttenuation(dist, light.range) * spotIntensity;
 
     return CookTorranceBRDF(L, V, N, albedo, metallic, roughness, radiance);
 }
 
 // ---------- main ----------
 void main() {
-    vec3 N = normalize(vNormal);
+    // Interpolated TBN basis (may be non-orthonormal after interpolation).
+    vec3 N_geom = normalize(vNormal);
+
+    // Sample albedo (sRGB texture → already linear on sample).
+    vec3 albedo = uMaterial.color.rgb;
+    if (uMaterial.hasDiffuseTex != 0) {
+        albedo *= texture(uDiffuseTex, vTexCoord).rgb;
+    }
+
+    // Resolve surface normal: either from normal map (tangent-space) or geometry.
+    vec3 N;
+    if (uMaterial.hasNormalTex != 0) {
+        vec3 T = normalize(vTangent);
+        vec3 B = normalize(vBitangent);
+        mat3 TBN = mat3(T, B, N_geom);
+
+        vec3 tangentNormal = texture(uNormalTex, vTexCoord).xyz * 2.0 - 1.0;
+        N = normalize(TBN * tangentNormal);
+    } else {
+        N = N_geom;
+    }
+
     vec3 V = normalize(uCameraPos - vWorldPos);
 
-    vec3 albedo   = uMaterial.color.rgb;
-    if (uMaterial.hasDiffuseTex != 0) {
-        albedo = texture(uDiffuseTex, vTexCoord).rgb;
-    }
+    // Metallic / roughness: either from texture (glTF MR: G=roughness, B=metallic)
+    // or scalar uniforms. Scalar values act as multipliers when a texture is bound.
     float metallic  = uMaterial.metallic;
     float roughness = uMaterial.roughness;
+    if (uMaterial.hasMetalRoughTex != 0) {
+        vec3 mr = texture(uMetalRoughTex, vTexCoord).rgb;
+        roughness *= mr.g;
+        metallic  *= mr.b;
+    }
+    roughness = clamp(roughness, 0.04, 1.0);
+    metallic  = clamp(metallic, 0.0, 1.0);
+
+    // AO: scalar * texture (R channel, linear).
+    float ao = uMaterial.ao;
+    if (uMaterial.hasAOTex != 0) {
+        ao *= texture(uAOTex, vTexCoord).r;
+    }
 
     vec3 Lo = vec3(0.0);
 
@@ -416,19 +483,45 @@ void main() {
         Lo += CalcSpotLightPBR(uSpotLights[i], N, V, vWorldPos, albedo, metallic, roughness);
     }
 
+    // Apply AO to the full direct-light accumulation as a cheap approximation
+    // (true AO only affects ambient/indirect; will be refined once IBL lands).
+    Lo *= ao;
+
     // fallback ambient if no lights
     if (uNumDirLights == 0 && uNumPointLights == 0 && uNumSpotLights == 0) {
-        Lo = vec3(0.03) * albedo * uMaterial.ao;
+        Lo = vec3(0.03) * albedo * ao;
     }
 
-    // HDR tone mapping (Reinhard)
-    vec3 mapped = Lo / (Lo + vec3(1.0));
+    // Emissive: scalar + texture (sRGB → linear on sample).
+    vec3 emissive = uMaterial.emissive;
+    if (uMaterial.hasEmissiveTex != 0) {
+        emissive += texture(uEmissiveTex, vTexCoord).rgb;
+    }
+    Lo += emissive;
 
-    // Gamma correction
-    mapped = pow(mapped, vec3(1.0 / 2.2));
-
-    FragColor = vec4(mapped, uMaterial.color.a);
+    // Output linear HDR radiance. Exposure and ACES tone mapping are applied
+    // by the post-process composite pass (see PostProcess.cpp).
+    FragColor = vec4(Lo, uMaterial.color.a);
 }
+)";
+
+// ===========================================================================
+// Depth-only pass (Phase 13 shadow maps). Only position attribute is read.
+// ===========================================================================
+
+static const char* kDepth_VS = R"(
+#version 450 core
+layout(location = 0) in vec3 aPosition;
+uniform mat4 uLightSpaceMatrix;
+uniform mat4 uModel;
+void main() {
+    gl_Position = uLightSpaceMatrix * uModel * vec4(aPosition, 1.0);
+}
+)";
+
+static const char* kDepth_FS = R"(
+#version 450 core
+void main() {}
 )";
 
 } // namespace ark

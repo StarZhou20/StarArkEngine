@@ -22,26 +22,36 @@ bool GLShader::Compile(const std::string& vertexSrc, const std::string& fragment
         return false;
     }
 
-    program_ = glCreateProgram();
-    glAttachShader(program_, vs);
-    glAttachShader(program_, fs);
-    glLinkProgram(program_);
+    // Link into a fresh program so that on failure we can retain the
+    // previously-linked program_ intact (important for hot reload).
+    GLuint newProg = glCreateProgram();
+    glAttachShader(newProg, vs);
+    glAttachShader(newProg, fs);
+    glLinkProgram(newProg);
 
     GLint success = 0;
-    glGetProgramiv(program_, GL_LINK_STATUS, &success);
+    glGetProgramiv(newProg, GL_LINK_STATUS, &success);
     if (!success) {
         GLint logLen = 0;
-        glGetProgramiv(program_, GL_INFO_LOG_LENGTH, &logLen);
+        glGetProgramiv(newProg, GL_INFO_LOG_LENGTH, &logLen);
         std::vector<char> log(static_cast<size_t>(logLen));
-        glGetProgramInfoLog(program_, logLen, nullptr, log.data());
+        glGetProgramInfoLog(newProg, logLen, nullptr, log.data());
         ARK_LOG_ERROR("RHI", std::string("Shader link failed: ") + log.data());
-        glDeleteProgram(program_);
-        program_ = 0;
+        glDeleteProgram(newProg);
+        glDeleteShader(vs);
+        glDeleteShader(fs);
+        return false;
     }
+
+    // Success: release the old program (if any) and adopt the new one.
+    if (program_) {
+        glDeleteProgram(program_);
+    }
+    program_ = newProg;
 
     glDeleteShader(vs);
     glDeleteShader(fs);
-    return program_ != 0;
+    return true;
 }
 
 void GLShader::Bind() const {

@@ -4,6 +4,7 @@
 #include "../objects/GroundObject.h"
 #include "../objects/ModelObject.h"
 #include "engine/debug/DebugListenBus.h"
+#include "engine/platform/Paths.h"
 
 void FBXDemoScene::OnLoad() {
     SetSceneName("FBXDemoScene");
@@ -24,7 +25,8 @@ void FBXDemoScene::OnLoad() {
     // Monkey (FBX)
     {
         auto* monkey = CreateObject<ModelObject>();
-        monkey->Configure("fbx/monkey.fbx", glm::vec3(0.0f, 0.5f, 0.0f), 0.01f);
+        monkey->Configure(ark::Paths::ResolveContent("models/monkey.fbx").string(),
+                          glm::vec3(0.0f, 0.5f, 0.0f), 0.01f);
     }
 
     ARK_LOG_INFO("Core", "FBXDemoScene loaded");

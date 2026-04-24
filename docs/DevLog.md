@@ -1,7 +1,7 @@
 # StarArk 工程开发日志 (DevLog)
 
 > **用途**: 供 AI 编码助手阅读，快速了解项目当前状态、已完成内容、待办事项和技术约束。  
-> **最后更新**: 2026-04-21
+> **最后更新**: 2026-04-24
 
 ---
 
@@ -23,20 +23,20 @@ StarArk 是一个 **C++20 3D 游戏框架**，采用 Unity 风格的架构（AOb
 | 编译器 | MSVC 19.50 (Visual Studio 2025 Community) |
 | CMake | 4.2, 使用 NMake Makefiles 生成器 |
 | vcvarsall | `"C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvarsall.bat" x64` |
-| 构建目录 | `build2/` |
+| 构建目录 | `build/` |
 | 代理 | `http://127.0.0.1:9910`（下载依赖时需要） |
 
 ### 构建命令
 
 ```powershell
 # 配置
-cmd /c "call vcvarsall x64 >nul 2>&1 && cmake -S . -B build2 -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+cmd /c "call vcvarsall x64 >nul 2>&1 && cmake -S . -B build -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
 
 # 编译
-cmd /c "call vcvarsall x64 >nul 2>&1 && cmake --build build2"
+cmd /c "call vcvarsall x64 >nul 2>&1 && cmake --build build"
 
 # 运行
-build2\game\StarArkGame.exe
+build\game\StarArkGame.exe
 ```
 
 ### 依赖管理
@@ -105,10 +105,14 @@ StarArk/
 │       ├── Material.h/cpp      # 材质（shader + 颜色/PBR参数/纹理）
 │       ├── MeshRenderer.h/cpp  # 网格渲染器组件
 │       ├── ForwardRenderer.h/cpp # 前向渲染管线（Blinn-Phong + PBR）
-│       ├── ShaderSources.h     # 内置 GLSL 着色器（Phong + PBR Cook-Torrance）
+│       ├── ShaderSources.h     # 内置 GLSL fallback（Phase M1 迁移到 engine/shaders/）
+│       ├── ShaderManager.h/cpp # 从文件加载 GLSL + mtime 热重载 (Phase M1)
 │       ├── OrbitCamera.h/cpp   # 轨道相机控制器组件
 │       ├── TextureLoader.h/cpp # 纹理文件加载（stb_image）
 │       └── ModelLoader.h/cpp  # 3D模型加载（Assimp）
+├── engine/shaders/             # GLSL 文件（Phase M1，运行时由 ShaderManager 加载）
+│   ├── pbr.vert / pbr.frag
+│   └── phong.vert / phong.frag
 ├── engine/third_party/
 │   └── stb/                    # stb_image 单头文件库
 │       ├── stb_image.h
@@ -200,6 +204,181 @@ StarArk/
   - 减少状态切换（shader 绑定、材质 uniform 设置）
 - **验证**: 构建通过，PBR 场景渲染正常
 
+### Phase G: 引擎/游戏/样例三分架构 ✅
+
+- **分层**：
+  - `engine/`：静态库 `StarArkEngine`（可复用内核）
+  - `game/`：可执行 `StarArkGame`，保持空壳（玩家项目起点）
+  - `samples/`：可执行 `StarArkSamples`，承载所有演示场景（DemoScene / FBXDemoScene / 所有 PBR/Light/Model 样例对象）
+- **路径抽象**：新增 `engine/platform/Paths.{h,cpp}`
+  - `Init(argv[0])` 必须在 `main()` 首行调用
+  - `GameRoot()` 返回 exe 所在目录（Windows 下用 `GetModuleFileNameW`，非 cwd）
+  - `Content()` / `Mods()` / `Logs()` 派生；`UserData(title)` 指向 `%APPDATA%/StarArk/<title>`
+  - `ResolveContent("models/foo.obj")` → 绝对路径
+  - `SetDevContentOverride(p)` 允许源码树运行
+- **CMake**：顶层 `StarArkSDK` 工程，`STARARK_BUILD_SAMPLES` / `STARARK_BUILD_GAME` 默认 ON；两个可执行目标都 POST_BUILD 拷 content/models 到 exe 旁边
+- **VSCode**：`.vscode/tasks.json` 定义 vcvarsall+NMake 的 Configure/Build/Clean Rebuild；`launch.json` 分别调试两个 exe；`settings.json` 禁用 CMake Tools 扩展的自动重配置（避免覆盖 NMake build/）
+- **验证**: 两个 exe 均能独立启动；样例场景走 `Paths::ResolveContent` 正确加载资源
+
+### Phase 8: sRGB + ACES Tonemap + 物理光衰减 ✅
+
+- **sRGB 纹理工作流**：
+  - `RHITexture::Upload(..., TextureFormat format)`，新增枚举 `TextureFormat::{sRGB_Auto, Linear}`
+  - OpenGL 后端根据 format + 通道数选 `GL_SRGB8_ALPHA8` / `GL_SRGB8` / 普通 `GL_RGBA8` 等内部格式
+  - `TextureLoader::Load(..., bool isSRGB = true)` 默认色彩贴图按 sRGB 处理；法线/MR/AO/数据贴图用 `false`
+  - 同时为纹理启用 16× 各向异性过滤（`GLEW_EXT_texture_filter_anisotropic` 检测可用时）
+- **sRGB framebuffer**：
+  - `Window.cpp` 加 `glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_TRUE)` + `glEnable(GL_FRAMEBUFFER_SRGB)`
+  - shader 不再手写 `pow(1/2.2)`；从 linear 工作空间由驱动自动写回 sRGB 输出
+- **ACES Filmic Tone Mapping**（Narkowicz 2015 近似）：替换之前的 Reinhard
+  - PBR_FS 在加 emissive + 乘 uExposure 之后，使用 `(L*(a*L+b))/(L*(c*L+d)+e)` 映射
+- **物理光衰减**：
+  - 新增 `PhysicalAttenuation(dist, range) = 1/(dist²) * (1 - smoothstep(range*0.75, range, dist))`
+  - 点光源 / 聚光灯的衰减公式从 `constant/linear/quadratic` 改为物理正确的平方反比 + 软截断；范围外早退
+  - `Light` 结构体中旧字段仍保留（兼容），shader 不再使用
+- **Exposure & emissive**：
+  - `ForwardRenderer::SetExposure(f)` 写 `uExposure`（默认 1.0）
+  - `Material::SetEmissive(vec3)` 写 `uMaterial.emissive`，自发光在 tonemap 前加入
+- **Demo 光照强度适配**：物理衰减比线性/二次项衰减暗约 4-5×，样例中点光 1.5→10、聚光 2.0→30
+
+### Phase 9: 多贴图 PBR + 法线贴图 ✅
+
+- **顶点格式统一**（11 floats / 44 字节）：`position(3) + normal(3) + uv(2) + tangent(3)`
+  - `Mesh::CreateCube/Plane/Sphere` 三个基元的硬编码切线
+  - `ModelLoader` 的 `ModelVertex` 新增 tangent，读取 `aiMesh::mTangents`（已开 `aiProcess_CalcTangentSpace`），缺失时按 normal-up 叉积兜底
+- **Material 新增 4 组贴图接口**：
+  - Unit 1：`SetNormalTexture`（linear）
+  - Unit 2：`SetMetallicRoughnessTexture`（linear；glTF 约定 G=roughness, B=metallic）
+  - Unit 3：`SetAOTexture`（linear，R 通道）
+  - Unit 4：`SetEmissiveTexture`（sRGB）
+  - 每次 `Bind()` 更新 `hasNormalTex / hasMetalRoughTex / hasAOTex / hasEmissiveTex` 分支标志；所有 sampler uniform 每帧写入保证定义良好
+- **PBR 着色器（TBN + 多贴图）**：
+  - PBR_VS 读 `aTangent`，Gram-Schmidt 正交化 → 输出 `vTangent / vBitangent / vNormal`
+  - PBR_FS：
+    - `hasNormalTex` → 构造 TBN，采样 tangent-space 法线 `*2-1` → 世界空间 N
+    - `hasMetalRoughTex` → `metallic/roughness` 与贴图 B/G 通道相乘（标量是倍率）
+    - `hasAOTex` → `ao` 与 R 通道相乘，累加到 Lo
+    - `hasEmissiveTex` → 叠加 emissive
+- **ModelLoader 自动 pickup**（Assimp 5.x 约定多覆盖）：
+  - Normal：`aiTextureType_NORMALS` → `HEIGHT`（OBJ `map_Bump`）
+  - MR：`DIFFUSE_ROUGHNESS` → `METALNESS` → `UNKNOWN`（glTF 不同导出器差异大）
+  - AO：`AMBIENT_OCCLUSION` → `LIGHTMAP`
+  - Emissive：`EMISSIVE`
+  - 正确传 `isSRGB`：color/emissive=true；normal/MR/AO=false
+
+### Phase M1: ShaderManager + 热重载 ✅
+
+- **动机**：Phase 10/11/12 会引入大量 shader（tonemap、bloom、skybox、IBL 预计算、IBL 采样），改一行 GLSL 就要全量重编译非常痛。同时支持玩家改光影（MC/Skyrim Creation Kit 级 mod）。
+- **文件组织**：
+  - 源：`engine/shaders/{pbr,phong}.{vert,frag}`，CMake POST_BUILD 拷到 `$<TARGET_FILE_DIR>/content/shaders/`
+  - Fallback：`engine/rendering/ShaderSources.h` 保留原字符串，文件找不到时用
+- **ShaderManager API**（`engine/rendering/ShaderManager.h`）：
+  - `Get(name)` → `shared_ptr<RHIShader>`，懒加载；按名去 `Paths::ResolveContent("shaders/{name}.{vert,frag}")` 读
+  - `CheckHotReload()` 每帧调用；对比 `last_write_time`，有变化就调 `RHIShader::Compile()` 在原 program 上就地重编
+  - 失败时保留旧 program 不换（`GLShader::Compile` 已调整为先编译到临时 program，成功才替换）
+  - 内部 cache 以 name 为键，同名查询同一 shared_ptr，已有 Material 自动看到新 program
+- **编译期开关**：`ARK_SHADER_HOT_RELOAD` CMake option（默认 ON）→ `-DARK_SHADER_HOT_RELOAD=0` 发布时禁用轮询
+- **ForwardRenderer 集成**：构造时创建 `ShaderManager`；`RenderFrame` 开头调 `CheckHotReload()`
+- **样例迁移**：`PBRSphere / GroundObject / ModelObject` 不再调 `device->CreateShader() + Compile(kPBR_VS, kPBR_FS)`，改为 `engine.GetRenderer()->GetShaderManager()->Get("pbr")`
+- **验证**：构建通过，两个 exe 旁 `content/shaders/` 下 4 个 .vert/.frag 文件齐全；运行时 `ShaderManager: loaded 'pbr' from ...` 日志
+
+### Phase 10: HDR FBO + Bloom ✅
+
+- **动机**：让强光源（灯泡、自发光、金属高光）产生"溢光"效果，并把 tonemap 从场景 shader 移到后处理单通道，后面接 IBL/天空盒/体积光都要共享同一 HDR 缓冲。
+- **设计**：
+  - **HDR 场景 FBO**：RGBA16F 颜色 + 24/8 深度模板，全分辨率
+  - **Bloom 半分辨率 ping-pong**：2 个 RGBA16F FBO（亮度提取 + 可分离高斯模糊交替）
+  - **Fullscreen triangle**：单 VAO/VBO，3 顶点覆盖 NDC
+  - **三个后处理 program**（内嵌 GLSL，不走 ShaderManager，因为与场景 shader 耦合低）：
+    - `bright`：阈值 + soft knee 提取高亮
+    - `blur`：可分离 9-tap 高斯，uHorizontal 切换水平/垂直
+    - `composite`：`result = ACES((scene + bloom*strength) * exposure)`，写入默认 FB（sRGB 自动 gamma）
+- **场景 shader 改动**：`pbr.frag` 与 `ShaderSources.h::kPBR_FS` 去掉 `Lo *= uExposure` 和 ACES 段，直接输出线性 HDR `vec4(Lo, alpha)`
+- **PostProcess 类**（`engine/rendering/PostProcess.{h,cpp}`）：
+  - `Init(w,h)` / `Resize(w,h)` / `BeginScene` / `EndScene` / `Apply(exposure, threshold, strength, iterations)`
+  - 首帧或窗口尺寸变化时自动分配/重建 GL 资源
+- **ForwardRenderer 集成**：
+  - 构造时 `new PostProcess`
+  - `RenderFrame` 在相机循环前后分别调 `BeginScene/EndScene/Apply`
+  - 新增 `SetBloomEnabled/SetBloomThreshold/SetBloomStrength/SetBloomIterations` 运行时参数
+  - 默认值：阈值 1.0，强度 0.6，5 次高斯迭代（即 10 次 blur pass）
+- **验证**：构建通过，日志出现 `PostProcess initialized (1280x720, HDR+Bloom)`；后续场景绘制无 GL error；点光/聚光灯高亮处可见光晕（肉眼可验证）
+
+### Phase 11: Skybox ✅
+
+- **动机**：场景需要一个真实的远景背景；也是 Phase 12 IBL 的输入源（辐照图/预过滤镜都从 cubemap 卷积得来）。
+- **设计**：不走 RHI 抽象，直接在 [engine/rendering/Skybox.cpp](engine/rendering/Skybox.cpp) 里用原生 GL —— 与 `PostProcess` 同策略，避免污染 RHI。
+- **接口**（[engine/rendering/Skybox.h](engine/rendering/Skybox.h)）：
+  - `Init()`：懒初始化 GL 资源（cubemap + 单位立方体 VAO + 内嵌 GLSL program）
+  - `SetFromFiles({+X,-X,+Y,-Y,+Z,-Z})`：6 面 LDR 图片加载成 sRGB cubemap，自动生成 mipmap
+  - `GenerateProceduralGradient(zenith, horizon, ground, faceSize)`：运行时生成天顶→地平线→地面的线性 HDR 渐变（RGB16F），默认值（蓝→白→棕）在 `Init()` 中自动填充，确保开箱即用
+  - `Render(view, projection)`：depth func LEQUAL + depth mask OFF + 剥离 view 平移；shader 强制 `gl_Position.zw` 让深度恒为 1
+  - `SetEnabled(bool)` / `SetIntensity(float)`
+- **ForwardRenderer 集成**：构造时 `new Skybox`；`RenderCamera` 在不透明网格绘制后、`EndScene` 前调 `skybox_->Render(viewMat, projMat)`；这样天空盒绘制到 HDR FBO 内，自动被 bloom 和 tonemap 处理
+- **验证**：构建通过；运行日志 `Skybox: generated procedural gradient (128x128 per face)` + `Skybox initialized`；场景背景从纯黑变成渐变天空
+
+### Phase 12: IBL + RenderSettings 聚合 ✅
+
+- **动机**：让材质在无直接光照下也有基于环境的 ambient 贡献（PBR "镜面/漫反射环境光"），接近 UE5 效果；同时为将来 M10 场景序列化做准备，先把散落的渲染参数聚合到一个结构体里。
+- **新增文件**：
+  - [engine/rendering/RenderSettings.h](engine/rendering/RenderSettings.h)：`RenderSettings` 聚合结构体（`exposure` + `bloom{enabled,threshold,strength,iterations}` + `sky{enabled,intensity}` + `ibl{enabled,diffuseIntensity,specularIntensity}`）。当前只作为运行时参数中枢；M10 阶段添加 JSON (de)serialize 即可一次性持久化所有渲染调参。
+  - [engine/rendering/IBL.h](engine/rendering/IBL.h) / [.cpp](engine/rendering/IBL.cpp)：原生 GL（不走 RHI），烘焙 split-sum IBL 三件套：
+    - `irradianceMap_` (RGB16F cubemap, 32×32)：辐照度卷积（hemisphere 积分，`sampleDelta=0.025`），用于漫反射环境项
+    - `prefilterMap_` (RGB16F cubemap, 128×128, 5 mips)：按 roughness 分级 GGX 重要性采样（1024 样本 / Hammersley），用于镜面环境项
+    - `brdfLUT_` (RG16F 2D, 512×512)：Schlick-Fresnel 的 `(NdotV, roughness) → (A,B)` 查找表，全屏 quad 预计算
+  - `Bake(envCube, ...)` 保存/恢复 GL 状态（FBO、viewport、剔除、深度），不干扰主循环。
+- **Shader 更新**（[engine/shaders/pbr.frag](engine/shaders/pbr.frag)）：
+  - 新增 uniform：`uIBLEnabled`, `uIrradianceMap`（unit 5），`uPrefilterMap`（unit 6），`uBrdfLUT`（unit 7），`uIBLDiffuseIntensity`, `uIBLSpecularIntensity`, `uPrefilterMaxLod`
+  - main 末尾新增 ambient 分支：`uIBLEnabled != 0` 时 `Lo += kD * irradiance * albedo + prefiltered * (F * envBRDF.x + envBRDF.y)`（粗糙度感知的 `FresnelSchlickRoughness`）；否则保留原 `vec3(0.03)*albedo*ao` 兜底
+  - `ShaderSources.h` 中嵌入的 fallback `kPBR_FS` 未同步（缺失的 uniform 会被自动优化掉，不影响兼容）
+- **ForwardRenderer 重构**：
+  - 引入 `RenderSettings settings_` 成员作为单一事实源；原有 `exposure_/bloomEnabled_/...` 字段删除，setter/getter 全部改为读写 `settings_` 的对应字段（API 向后兼容）
+  - 新增成员 `std::unique_ptr<IBL> ibl_` + `bool iblBaked_`；`RenderFrame` 首帧检测到 Skybox 就绪时调 `ibl_->Bake(skybox_->GetCubeMap())`，之后每帧复用；提供 `RebakeIBL()` 供切换 skybox 后手动触发
+  - `DrawMeshRenderer` 里绑定 IBL 三贴图到单元 5/6/7，并设置 `uIBLEnabled/uPrefilterMaxLod/uIBLDiffuseIntensity/uIBLSpecularIntensity`
+  - `skybox_->SetIntensity(settings_.sky.intensity)`、`postProcess_->Apply(..., settings_.exposure, settings_.bloom.*)` 全部走聚合参数
+- **验证**：构建全部目标通过；运行日志出现 `IBL baked: irr=32 prefilter=128 brdfLUT=512`（IBL.cpp:470），场景在无直接光区域出现正确的环境漫反射 + 镜面反射。
+
+### Phase 13: Directional Shadow Mapping ✅
+
+- **动机**：阴影是画面真实感最大的贡献来源；直接光（主方向光）没有投影会让物体看起来"飘"。先落地单层方向光 shadow map + PCF，后续可升级到 CSM。
+- **设计**：继承既有"引擎内部 pass 走原生 GL"的风格（与 PostProcess / Skybox / IBL 一致），不污染 RHI 抽象。
+- **新增文件**：
+  - [engine/shaders/depth.vert](engine/shaders/depth.vert) / [depth.frag](engine/shaders/depth.frag)：纯 depth-only，vert 只读取 `aPosition`，frag 为空。同时镜像到 [engine/rendering/ShaderSources.h](engine/rendering/ShaderSources.h) 的 `kDepth_VS/kDepth_FS`，并在 [engine/rendering/ShaderManager.cpp](engine/rendering/ShaderManager.cpp) 的 `LookupEmbeddedSource` 注册为 `"depth"`。
+  - [engine/rendering/ShadowMap.h](engine/rendering/ShadowMap.h) / [.cpp](engine/rendering/ShadowMap.cpp)：GL_DEPTH_COMPONENT24 纹理 + FBO 封装。
+    - `Init(resolution)`：幂等；`GL_CLAMP_TO_BORDER` + border color (1,1,1,1) —— 采样到 shadow map 之外视为"完全受光"；`glDrawBuffer(GL_NONE)` 声明无颜色附件。
+    - `Begin()/End()`：保存/恢复 viewport + 当前 FBO；清空 depth。
+    - `UpdateMatrix(lightDir, focus, orthoHalfSize, near, far)`：沿光线方向在 `focus - dir*d` 处放置光源"相机"，正交投影覆盖 `[-half, half]` × `[-half, half]`。上向量在 `|dir.y|>0.95` 时切换到 (0,0,1) 防止退化。
+- **RenderSettings 扩展**：新增 `shadow { enabled, resolution, orthoHalfSize, near/farPlane, depthBias, normalBias, pcfKernel }`；`pcfKernel=k` 产生 `(2k+1)²` 个采样（默认 2 → 5×5 = 25 taps，结合 `GL_LINEAR` 硬件双线性 ≈ 100 tap 等效）。
+- **Shader（[pbr.frag](engine/shaders/pbr.frag) + 镜像 kPBR_FS 略）**：
+  - 新增 uniform：`uShadowEnabled`, `uShadowMap`（unit 8），`uLightSpaceMatrix`, `uShadowDepthBias`, `uShadowNormalBias`, `uShadowPcfKernel`, `uShadowTexelSize`
+  - `SampleDirShadow(worldPos, N, L)`：将世界坐标投射到光源 clip 空间 → [0,1]；超出 far plane 或 XY 范围直接返回 0（完全受光）；`bias = max(normalBias*(1-NdotL), depthBias)` 对斜入射面加大偏移；PCF 循环采样
+  - `CalcDirLightPBRShadowed(light, ..., shadow)`：返回 `ambient + (1-shadow) * Lo`（ambient/环境光不被 shadow 抑制，避免死黑）
+  - main 循环首个方向光 (`i==0`) 且 `uShadowEnabled!=0` 时计算 shadow，否则 `shadow=0`
+- **ForwardRenderer 集成**：
+  - 新增 `std::unique_ptr<ShadowMap> shadowMap_` 成员 + `bool shadowThisFrame_` 帧级标志
+  - `RenderFrame` 在 `BeginScene` 之前先调 `RenderShadowPass()`
+  - `RenderShadowPass()`：找到第一个启用的方向光 → `ShadowMap::Init(settings_.shadow.resolution)` → `UpdateMatrix(...)` → 用 `ShaderManager::Get("depth")` + 现有 `GetOrCreatePipeline` 遍历所有可见 MeshRenderer 绘制 depth；渲染期间切换为 `glCullFace(GL_FRONT)` 抑制 self-shadow acne
+  - `SetLightUniforms`：`shadowThisFrame_ && shadowMap_->IsValid()` 时绑定 depth 纹理到单元 8 并写入所有 shadow uniform
+- **验证**：构建全部目标通过；运行日志 `ShadowMap initialized (2048x2048)` + `ShaderManager: loaded 'depth' from ...content/shaders/depth.vert`；无 GL error；方向光下可见物体在地面上的软阴影（PCF 5×5）。
+
+### Phase 14: ACES Hill 修复（双重 sRGB）+ Mini-M10 SceneSerializer ✅
+
+- **问题**：场景泛白/过曝。根因是 [engine/platform/Window.cpp](engine/platform/Window.cpp) 启用了 `GL_FRAMEBUFFER_SRGB`（正确），但 PostProcess composite 里用的 Narkowicz ACES 公式**已经输出 sRGB-ready 空间**，导致硬件再做一次 linear→sRGB，相当于两次 gamma。中灰 0.5 被抬到约 0.73。
+- **修复**：[engine/rendering/PostProcess.cpp](engine/rendering/PostProcess.cpp) 的 `kCompositeFS` 换成 **ACES Hill fitted**（`ACESInputMat` + `RRTAndODTFit` + `ACESOutputMat`），输入线性 HDR → 输出**线性** LDR，留给 `GL_FRAMEBUFFER_SRGB` 唯一一次编码。
+- **Mini Phase M10（为外部调光工具准备的最小序列化）**：
+  - [engine/rendering/SceneSerializer.h](engine/rendering/SceneSerializer.h) / [.cpp](engine/rendering/SceneSerializer.cpp)：
+    - 零依赖；手写 JSON writer + 约 150 行的手写 parser（够用即可的子集）
+    - Schema：`{ renderSettings: {exposure,bloom,sky,ibl,shadow}, lights: [{name,type,color,intensity,ambient,position,rotationEuler,range,constant,linear,quadratic,innerAngle,outerAngle}, ...] }`
+    - `Save(path, renderer)`：遍历 `Light::GetAllLights()` 把当前运行时状态 dump 成 JSON；旋转用欧拉角（度）表示便于人肉编辑
+    - `Load(path, renderer)`：把 JSON 读回 `RenderSettings`；光源按 `AObject::GetName()` 匹配回 runtime 的 `Light*`，未匹配的条目忽略，runtime 中 JSON 里没有的光源保留原值
+    - `EnableHotReload(path)` + `Tick(renderer)`：mtime 轮询（复用 ShaderManager 的思路）；**首次 Tick 延迟执行初始 Save/Load**（因为 `AObject::Init()` 在 OnLoad 之后的主循环里才被调用，光组件此时才真正进入 `allLights_` 列表）
+  - [engine/rendering/ForwardRenderer.cpp](engine/rendering/ForwardRenderer.cpp)：`RenderFrame` 开头调 `SceneSerializer::Tick(this)`
+  - [samples/src/scenes/DemoScene.cpp](samples/src/scenes/DemoScene.cpp)：`OnLoad` 末尾 `SceneSerializer::EnableHotReload(Paths::ResolveContent("lighting.json"))`
+- **验证**：
+  1. 启动 → 生成 `content/lighting.json`，正确写入 3 盏光 + 全量 RenderSettings
+  2. 外部编辑 `lighting.json`（改 `exposure: 0.5`、改 `intensity: 5`）保存 → 日志出现 `SceneSerializer: loaded ... (3 lights matched)`，画面实时反映
+- **使用方式（外部工具）**：任何语言（Python/Node/纯记事本）修改 JSON 保存即生效。下一步可以用 200 行 Dear PyGui 或 tkinter 做一个滑块工具，实时调光。
+
 ---
 
 ## 5. 未完成 / 待开发
@@ -217,15 +396,20 @@ StarArk/
 
 ### 中优先级（完善功能）
 
-| 编号 | 功能 | 描述 |
-|------|------|------|
-| **M1** | ResourceManager | 统一的资源管理器，缓存 Mesh/Material/Shader/Texture，避免重复加载 |
-| **M2** | Skybox | 天空盒渲染（立方体贴图） |
-| **M3** | Shadow Mapping | 方向光阴影贴图（至少基础版） |
-| **M4** | 文件系统工具 | 路径解析、资源搜索、热重载基础设施 |
-| **M5** | 场景序列化 | 从 JSON/二进制文件加载场景配置 |
-| **M6** | 物理系统 | 碰撞检测 + 刚体（可集成 Bullet/Jolt） |
-| **M7** | 音频系统 | 基础音效播放（可集成 OpenAL/miniaudio） |
+| 编号 | 功能 | 描述 | 状态 |
+|------|------|------|------|
+| **M1** | ~~ShaderManager + 热重载~~ | 文件加载 GLSL + mtime 轮询在原 program 上重编 | ✅ 已完成 |
+| **M2** | ~~引擎/游戏分层 + Paths~~ | engine/game/samples 三分架构，运行时路径 | ✅ 已完成 (Phase G) |
+| **M3** | ~~sRGB + ACES + 物理光衰减~~ | 颜色空间 + ACES Filmic + 1/r² 衰减 | ✅ 已完成 (Phase 8) |
+| **M4** | ~~多贴图 PBR + 法线贴图~~ | tangent 属性、MR/AO/Normal/Emissive 贴图 | ✅ 已完成 (Phase 9) |
+| **M5** | ~~HDR FBO + Bloom~~ | RGBA16F 浮点缓冲 + 亮度提取 + 高斯 ping-pong + ACES 合成 | ✅ 已完成 (Phase 10) |
+| **M6** | ~~Skybox~~ | 立方体贴图天空盒 + 程序化渐变 fallback | ✅ 已完成 (Phase 11) |
+| **M7** | IBL | HDR 环境探针：辐照图 + 预过滤镜 + BRDF LUT | ✅ 已完成 (Phase 12) |
+| **M8** | Shadow Mapping | 方向光 PSSM / 级联阴影 | ✅ 已完成 Phase 13（单层 shadow map + 5×5 PCF；CSM 推后）|
+| **M9** | ResourceManager | 统一缓存 Mesh/Material/Texture（Shader 已归 M1） |  |
+| **M10** | 场景序列化 | JSON/二进制场景加载 | ⏳ 雏形已落地 Phase 14（RenderSettings + Lights JSON + mtime 热重载）；完整场景图/Mesh/Material 序列化待后续 |
+| **M11** | 物理系统 | 碰撞 + 刚体（Bullet/Jolt 候选） |  |
+| **M12** | 音频系统 | OpenAL/miniaudio |  |
 
 ### 低优先级（优化 & 工具）
 

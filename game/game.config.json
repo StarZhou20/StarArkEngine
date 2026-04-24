@@ -1,0 +1,11 @@
+{
+  "title": "StarArk Game",
+  "window": {
+    "width": 1280,
+    "height": 720,
+    "fullscreen": false,
+    "vsync": true
+  },
+  "startup_scene": null,
+  "dev_mode": false
+}

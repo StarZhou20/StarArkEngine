@@ -6,7 +6,9 @@
 
 namespace ark {
 
-std::shared_ptr<RHITexture> TextureLoader::Load(RHIDevice* device, const std::string& filepath) {
+std::shared_ptr<RHITexture> TextureLoader::Load(RHIDevice* device,
+                                                const std::string& filepath,
+                                                bool isSRGB) {
     if (!device) {
         ARK_LOG_ERROR("Rendering", "TextureLoader::Load: null device");
         return nullptr;
@@ -22,13 +24,14 @@ std::shared_ptr<RHITexture> TextureLoader::Load(RHIDevice* device, const std::st
     }
 
     auto texture = std::shared_ptr<RHITexture>(device->CreateTexture().release());
-    texture->Upload(width, height, channels, data);
+    texture->Upload(width, height, channels, data,
+                    isSRGB ? TextureFormat::sRGB_Auto : TextureFormat::Linear);
 
     stbi_image_free(data);
 
     ARK_LOG_INFO("Rendering", "Loaded texture '" + filepath + "' (" +
         std::to_string(width) + "x" + std::to_string(height) + ", " +
-        std::to_string(channels) + "ch)");
+        std::to_string(channels) + "ch, " + (isSRGB ? "sRGB" : "linear") + ")");
 
     return texture;
 }

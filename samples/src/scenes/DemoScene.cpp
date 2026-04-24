@@ -4,7 +4,10 @@
 #include "../objects/GroundObject.h"
 #include "../objects/PBRSphere.h"
 #include "../objects/ModelObject.h"
+#include "engine/core/EngineBase.h"
 #include "engine/debug/DebugListenBus.h"
+#include "engine/platform/Paths.h"
+#include "engine/rendering/SceneSerializer.h"
 #include <string>
 
 void DemoScene::OnLoad() {
@@ -57,8 +60,14 @@ void DemoScene::OnLoad() {
     // Load external model via Assimp
     {
         auto obj = CreateObject<ModelObject>();
-        obj->Configure("assets/icosahedron.obj", glm::vec3(0.0f, 1.8f, 0.0f), 0.8f);
+        obj->Configure(ark::Paths::ResolveContent("models/icosahedron.obj").string(),
+                       glm::vec3(0.0f, 1.8f, 0.0f), 0.8f);
     }
+
+    // --- Phase M10 (mini): persist render settings + lights to JSON, watch for edits ---
+    // Initial save/load happens on the first SceneSerializer::Tick() after
+    // object components have been Init()'d.
+    ark::SceneSerializer::EnableHotReload(ark::Paths::ResolveContent("lighting.json"));
 }
 
 void DemoScene::OnUnload() {

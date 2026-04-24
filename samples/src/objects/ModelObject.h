@@ -3,7 +3,8 @@
 #include "engine/core/AObject.h"
 #include "engine/core/EngineBase.h"
 #include "engine/rendering/MeshRenderer.h"
-#include "engine/rendering/ShaderSources.h"
+#include "engine/rendering/ForwardRenderer.h"
+#include "engine/rendering/ShaderManager.h"
 #include "engine/rendering/ModelLoader.h"
 #include "engine/debug/DebugListenBus.h"
 #include "../components/Rotator.h"
@@ -22,9 +23,9 @@ public:
         SetName("Model_" + filepath_);
         auto* device = ark::EngineBase::Get().GetRHIDevice();
 
-        auto shader = std::shared_ptr<ark::RHIShader>(device->CreateShader().release());
-        if (!shader->Compile(ark::kPBR_VS, ark::kPBR_FS)) {
-            ARK_LOG_FATAL("RHI", "Failed to compile PBR shader");
+        auto shader = ark::EngineBase::Get().GetRenderer()->GetShaderManager()->Get("pbr");
+        if (!shader) {
+            ARK_LOG_FATAL("RHI", "Failed to load PBR shader");
         }
 
         auto nodes = ark::ModelLoader::Load(device, shader, filepath_);

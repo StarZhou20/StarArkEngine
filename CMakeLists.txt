@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
-project(StarArk VERSION 0.1.0 LANGUAGES CXX)
+project(StarArkSDK VERSION 0.1.0 LANGUAGES CXX)
+
+# --- Build options ---
+option(STARARK_BUILD_SAMPLES "Build sample games (DemoScene/FBXDemo/PBRDemo)" ON)
+option(STARARK_BUILD_GAME    "Build the game/ target (user game shell)"       ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -61,5 +65,13 @@ if(NOT EXISTS "${_glm_wrapper}/glm")
 endif()
 target_include_directories(glm-header-only INTERFACE "${_glm_wrapper}")
 
+# --- Subdirectories ---
 add_subdirectory(engine)
-add_subdirectory(game)
+
+if(STARARK_BUILD_SAMPLES)
+    add_subdirectory(samples)
+endif()
+
+if(STARARK_BUILD_GAME)
+    add_subdirectory(game)
+endif()

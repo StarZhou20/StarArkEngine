@@ -27,6 +27,13 @@
   - [4.8 TextureLoader](#48-textureloader)
   - [4.9 ModelLoader](#49-modelloader)
   - [4.10 ShaderSources](#410-shadersources)
+  - [4.11 ShaderManager](#411-shadermanager)
+  - [4.12 PostProcess](#412-postprocess)
+  - [4.13 Skybox](#413-skybox)
+  - [4.14 IBL](#414-ibl)
+  - [4.15 RenderSettings](#415-rendersettings)
+  - [4.16 ShadowMap](#416-shadowmap)
+  - [4.17 SceneSerializer](#417-sceneserializer)
 - [5. 平台层](#5-平台层)
   - [5.1 Window](#51-window)
   - [5.2 Input](#52-input)
@@ -394,11 +401,13 @@ enum class Light::Type { Directional, Point, Spot };
 
 | 方法 | 返回值 | 说明 |
 |------|--------|------|
-| `Mesh::CreateCube()` | `unique_ptr<Mesh>` | 创建单位立方体（24 顶点、36 索引、含法线和 UV） |
-| `Mesh::CreatePlane(float size = 10.0f)` | `unique_ptr<Mesh>` | 创建地面平面 |
-| `Mesh::CreateSphere(int sectors = 36, int stacks = 18)` | `unique_ptr<Mesh>` | 创建 UV 球体（Y-up，含法线和 UV） |
+| `Mesh::CreateCube()` | `unique_ptr<Mesh>` | 创建单位立方体（含法线、UV、tangent） |
+| `Mesh::CreatePlane(float size = 10.0f)` | `unique_ptr<Mesh>` | 创建地面平面（含 tangent） |
+| `Mesh::CreateSphere(int sectors = 36, int stacks = 18)` | `unique_ptr<Mesh>` | 创建 UV 球体（Y-up，含 tangent） |
 
 > **注意**: `CreateCube()` / `CreatePlane()` / `CreateSphere()` 只创建 CPU 端数据，需调用 `Upload(device)` 上传到 GPU。
+>
+> **顶点布局（Phase 9 起统一）**: 所有内置 Primitive 使用 44 字节 `PrimVert { vec3 position; vec3 normal; vec2 uv; vec3 tangent; }`，对应着色器 attribute location 0/1/2/3。`ModelLoader` 也产出相同布局。
 
 ### 4.4 Material
 
@@ -426,14 +435,22 @@ enum class Light::Type { Directional, Point, Spot };
 | `GetAO()` | `float` | 获取环境光遮蔽 |
 | `SetPBR(bool)` | `void` | 启用/禁用 PBR 模式 |
 | `IsPBR()` | `bool` | 是否启用 PBR |
-| `SetDiffuseTexture(shared_ptr<RHITexture>)` | `void` | 设置漫反射纹理 |
+| `SetDiffuseTexture(shared_ptr<RHITexture>)` | `void` | 设置漫反射/Base Color 纹理（unit 0） |
 | `GetDiffuseTexture()` | `RHITexture*` | 获取漫反射纹理 |
+| `SetNormalTexture(shared_ptr<RHITexture>)` | `void` | 设置切线空间法线贴图（unit 1） |
+| `SetMetallicRoughnessTexture(shared_ptr<RHITexture>)` | `void` | 设置 glTF MR 贴图（unit 2，G=roughness / B=metallic） |
+| `SetAOTexture(shared_ptr<RHITexture>)` | `void` | 设置 AO 贴图（unit 3，R 通道） |
+| `SetEmissiveTexture(shared_ptr<RHITexture>)` | `void` | 设置自发光贴图（unit 4） |
+| `SetEmissive(const glm::vec3&)` | `void` | 设置自发光颜色（与贴图相乘） |
+| `GetEmissive()` | `const glm::vec3&` | 获取自发光颜色 |
 
 #### 渲染方法
 
 | 方法 | 说明 |
 |------|------|
-| `Bind()` | 将材质参数绑定到 shader uniform（`uMaterial.color` / `uMaterial.specular` / `uMaterial.shininess` / `uMaterial.metallic` / `uMaterial.roughness` / `uMaterial.ao` / `uMaterial.hasDiffuseTex`），自动绑定漫反射纹理到 unit 0 |
+| `Bind()` | 将材质参数绑定到 shader uniform（`uMaterial.color` / `specular` / `shininess` / `metallic` / `roughness` / `ao` / `emissive` / `hasDiffuseTex` / `hasNormalTex` / `hasMetalRoughTex` / `hasAOTex` / `hasEmissiveTex`）；按需把 5 张贴图绑定到 unit 0–4，对应 sampler 为 `uDiffuseTex` / `uNormalTex` / `uMetalRoughTex` / `uAOTex` / `uEmissiveTex` |
+
+> **sRGB 约定**: Base Color / Emissive 纹理应以 sRGB 采样；Normal / MR / AO 必须线性。由 `TextureLoader::Load(..., bool isSRGB)` 控制。
 
 ### 4.5 MeshRenderer
 
@@ -462,8 +479,17 @@ enum class Light::Type { Directional, Point, Spot };
 
 | 方法 | 说明 |
 |------|------|
-| `ForwardRenderer(RHIDevice*)` | 构造（传入 RHI 设备） |
-| `RenderFrame(Window*)` | 渲染一帧：遍历所有相机（按优先级排序）→ 清屏 → 收集 MeshRenderer → **按 shader/material 排序** → 设置光照/MVP → 绘制 |
+| `ForwardRenderer(RHIDevice*)` | 构造（传入 RHI 设备）；内部创建 `ShaderManager`、`PostProcess`、`Skybox`、`IBL` |
+| `RenderFrame(Window*)` | 渲染一帧：`ShaderManager::CheckHotReload()` → 首帧 IBL 烘焙 → `PostProcess::BeginScene()` → 遍历相机渲染到 HDR FBO → `PostProcess::Apply()`（曝光 + ACES 合成）|
+| `GetRenderSettings()` | `RenderSettings&` — 直接修改所有渲染参数（曝光/bloom/sky/ibl），Phase M10 将整体序列化 |
+| `SetExposure(float)` / `GetExposure()` | 便捷访问 `settings_.exposure` |
+| `GetShaderManager()` | `ShaderManager*` |
+| `GetPostProcess()` | `PostProcess*` |
+| `GetSkybox()` | `Skybox*` — 天空盒（Phase 11） |
+| `GetIBL()` | `IBL*` — 图像光照探针（Phase 12） |
+| `RebakeIBL()` | 手动重新烘焙 IBL（切换 Skybox 后调用） |
+| `GetShadowMap()` | `ShadowMap*` — 方向光 shadow map（Phase 13） |
+| `SetBloomEnabled/Threshold/Strength/Iterations(...)` | 便捷访问 `settings_.bloom.*`（与旧 API 兼容） |
 
 #### 内部优化
 
@@ -488,7 +514,10 @@ ForwardRenderer 在绘制时设置以下 uniform：
 | `uMaterial.color` | `vec4` | 由 `Material::Bind()` 设置 |
 | `uMaterial.specular` | `vec3` | 由 `Material::Bind()` 设置 |
 | `uMaterial.shininess` | `float` | 由 `Material::Bind()` 设置 |
-| `uMaterial.hasDiffuseTex` | `int` | 由 `Material::Bind()` 设置 |
+| `uMaterial.hasDiffuseTex` / `hasNormalTex` / `hasMetalRoughTex` / `hasAOTex` / `hasEmissiveTex` | `int` | 由 `Material::Bind()` 设置 |
+| `uExposure` | `float` | 【历史遗留】在场景 shader 中作为 uniform 占位（仍会写入）；自 Phase 10 起真正的曝光系数由 `PostProcess` composite 着色器消费。 |
+
+> **色彩流水线（Phase 10 更新）**: 场景 shader 输出线性 HDR 到 RGBA16F FBO → `PostProcess::Apply()` 做亮度提取 + 高斯 ping-pong + `composite = ACES((scene + bloom*strength) * exposure)` → 写入默认 FB（`GL_FRAMEBUFFER_SRGB` 自动完成最终 Gamma）。PBR/Phong 片段着色器内**不再**做 tonemap 也不再乘 `uExposure`。点光/聚光使用 `1/dist² * smoothstep` 的物理衰减。
 
 ### 4.7 OrbitCamera
 
@@ -524,9 +553,11 @@ ForwardRenderer 在绘制时设置以下 uniform：
 
 | 方法 | 返回值 | 说明 |
 |------|--------|------|
-| `TextureLoader::Load(RHIDevice* device, const string& filepath)` | `shared_ptr<RHITexture>` | 加载图片文件（PNG/JPG/BMP/TGA），返回 GPU 纹理。失败返回 nullptr |
+| `TextureLoader::Load(RHIDevice* device, const string& filepath, bool isSRGB = true)` | `shared_ptr<RHITexture>` | 加载图片（PNG/JPG/BMP/TGA），返回 GPU 纹理；失败返回 nullptr |
 
-> **注意**: 自动翻转 Y 轴以适配 OpenGL 坐标系。
+> **isSRGB 语义**: `true` → 使用 `TextureFormat::sRGB_Auto`，GPU 采样时自动线性化（适合 BaseColor/Emissive）；`false` → `TextureFormat::Linear`（适合 Normal/MR/AO/HeightMap 等数据贴图）。
+>
+> **注意**: 自动翻转 Y 轴以适配 OpenGL 坐标系；启用 16× 各向异性过滤（若 `GL_EXT_texture_filter_anisotropic` 可用）。
 
 ### 4.9 ModelLoader
 
@@ -562,23 +593,276 @@ struct ModelNode {
 
 **头文件**: `#include "engine/rendering/ShaderSources.h"`
 
-引擎内置 GLSL 450 着色器源码字符串。
+内置 GLSL 450 着色器源码字符串，作为磁盘 `engine/shaders/*.vert|*.frag` 不存在时的 **fallback**。生产代码应通过 `ShaderManager::Get(name)` 获取，不直接引用这些常量。
 
-| 常量 | 说明 |
-|------|------|
-| `ark::kPhongVS` | Blinn-Phong 顶点着色器 |
-| `ark::kPhongFS` | Blinn-Phong 片段着色器（多光源） |
-| `ark::kPBR_VS` | PBR Cook-Torrance 顶点着色器 |
-| `ark::kPBR_FS` | PBR Cook-Torrance 片段着色器（多光源 + HDR 色调映射 + gamma 校正） |
+| 常量 | 对应磁盘文件 |
+|------|---------------|
+| `ark::kPhongVS` / `kPhongFS` | `engine/shaders/phong.vert` / `.frag` |
+| `ark::kPBR_VS` / `kPBR_FS` | `engine/shaders/pbr.vert` / `.frag` |
 
 #### 共享 uniform 接口
 
-所有内置着色器共享以下 uniform layout：
+- `uMVP`, `uModel`, `uNormalMatrix`, `uCameraPos`, `uExposure`
+- `uMaterial.*`（color / specular / shininess / metallic / roughness / ao / emissive / hasDiffuseTex / hasNormalTex / hasMetalRoughTex / hasAOTex / hasEmissiveTex）
+- `uDiffuseTex` (unit 0), `uNormalTex` (1), `uMetalRoughTex` (2), `uAOTex` (3), `uEmissiveTex` (4)
+- `uDirLights[MAX_DIR_LIGHTS]`, `uPointLights[MAX_POINT_LIGHTS]`, `uSpotLights[MAX_SPOT_LIGHTS]` + 计数 uniform
 
-- `uMVP` (mat4), `uModel` (mat4), `uNormalMatrix` (mat4), `uCameraPos` (vec3)
-- `uMaterial.*` (color, specular, shininess, metallic, roughness, ao, hasDiffuseTex)
-- `uDiffuseTex` (sampler2D, unit 0)
-- `uDirLights[MAX_DIR_LIGHTS]`, `uPointLights[MAX_POINT_LIGHTS]`, `uSpotLights[MAX_SPOT_LIGHTS]`
+### 4.11 ShaderManager
+
+**头文件**: `#include "engine/rendering/ShaderManager.h"`
+
+着色器资源管理器。每个 `ForwardRenderer` 持有一个实例，负责从磁盘加载 `engine/shaders/*.vert|*.frag`，缓存 `shared_ptr<RHIShader>`，并在 Debug 下做 mtime 轮询热重载。
+
+#### 接口
+
+| 方法 | 返回值 | 说明 |
+|------|--------|------|
+| `ShaderManager(RHIDevice*)` | — | 构造（由 `ForwardRenderer` 调用） |
+| `Get(const string& name)` | `shared_ptr<RHIShader>` | 按名字加载 / 取缓存。`name` 如 `"pbr"`、`"phong"`；解析路径为 `Paths::ResolveContent("shaders/" + name + ".vert")` 和 `.frag` |
+| `CheckHotReload()` | `void` | 对所有 `fromDisk` 的条目对比 `last_write_time`；有变化时在**原 `RHIShader` 对象上**重新 `Compile()`（编译失败保留旧 program），因此外部持有的 `shared_ptr` 无需更换 |
+| `SetHotReloadEnabled(bool)` / `IsHotReloadEnabled()` | `void` / `bool` | 运行时开关；默认 Debug=ON / Release=OFF（由 `ARK_SHADER_HOT_RELOAD` 宏控制） |
+
+#### 加载策略
+
+1. 优先从 `Paths::ResolveContent("shaders/<name>.vert|.frag")` 读取（构建期 `POST_BUILD` 把 `engine/shaders/` 复制到 `$<TARGET_FILE_DIR>/content/shaders/`）；
+2. 若磁盘不存在，则回落到 `ShaderSources.h` 内嵌字符串，并把条目标记为非 `fromDisk`（不参与热重载）。
+
+#### 构建选项
+
+- CMake: `option(ARK_SHADER_HOT_RELOAD "..." ON)` → 注入 `target_compile_definitions(... ARK_SHADER_HOT_RELOAD=0|1)` 到 `StarArkEngine`。
+- `engine/CMakeLists.txt` 同时导出内部变量 `ARK_ENGINE_SHADER_DIR`，供 `game` / `samples` 的 `POST_BUILD` 使用。
+
+#### 用法示例
+
+```cpp
+auto shader = ark::EngineBase::Get().GetRenderer()
+                 ->GetShaderManager()->Get("pbr");
+material->SetShader(shader);
+```
+
+### 4.12 PostProcess
+
+**头文件**: `#include "engine/rendering/PostProcess.h"`
+
+HDR 离屏渲染 + Bloom + ACES tone mapping 后处理管线（Phase 10）。由 `ForwardRenderer` 拥有，一般通过 `ForwardRenderer::SetBloom*` 接口间接控制。
+
+#### 管线
+
+1. **HDR 场景 FBO**：RGBA16F 颜色 + D24S8 深度，全分辨率，场景所有相机写到这里
+2. **亮度提取**（`bright` shader）：soft-knee 阈值把 HDR 高亮分量提到半分辨率 Bloom FBO[0]
+3. **可分离高斯**（`blur` shader）：9-tap 水平/垂直交替 ping-pong `2 * iterations` 趟
+4. **合成**（`composite` shader）：`result = ACES((scene + bloom * strength) * exposure)`，输出到默认 FB
+
+#### 接口
+
+| 方法 | 说明 |
+|------|------|
+| `Init(w, h)` | 分配 HDR FBO / Bloom ping-pong / 全屏三角形 / 编译 3 个内置着色器（首帧自动调用） |
+| `BeginScene(w, h)` | 绑定 HDR FBO；若大小变化自动重分配 |
+| `EndScene()` | 解绑，回默认 FB |
+| `Apply(screenW, screenH, exposure, bloomThreshold, bloomStrength, blurIterations)` | 运行全部后处理 pass；strength=0 或 iterations=0 时直接走 composite-only |
+| `SetBloomEnabled(bool)` / `IsBloomEnabled()` | 运行时开关 Bloom |
+
+#### 默认参数（由 `ForwardRenderer` 传入）
+
+| 参数 | 默认值 | 备注 |
+|------|--------|------|
+| `exposure` | 1.0 | 线性曝光系数，值越大画面越亮 |
+| `bloomThreshold` | 1.0 | HDR 线性空间的亮度阈值；>1 的分量才会溢光 |
+| `bloomStrength` | 0.6 | 合成时 Bloom 叠加系数 |
+| `bloomIterations` | 5 | 高斯 ping-pong 次数，总 blur pass = `2 * iterations` |
+
+#### 用法示例
+
+```cpp
+auto* renderer = ark::EngineBase::Get().GetRenderer();
+renderer->SetExposure(1.2f);
+renderer->SetBloomThreshold(1.5f);
+renderer->SetBloomStrength(0.4f);
+renderer->SetBloomIterations(6);
+// 或直接关闭 Bloom：
+renderer->SetBloomEnabled(false);
+```
+
+> **注意**：PostProcess 使用内置 GLSL 字符串编译自己的 3 个着色器，不走 `ShaderManager`（当前不支持后处理 shader 热重载）。规划阶段：待可扩展 post-FX 链时再战。
+
+### 4.13 Skybox
+
+**头文件**: `#include "engine/rendering/Skybox.h"`
+
+天空盒（Phase 11）。由 `ForwardRenderer` 拥有一个，从 `GetSkybox()` 获取。采用内嵌 GLSL program 与单位立方体 VAO，不经由 RHI 抽象层（和 `PostProcess` 一致）。
+
+#### 接口
+
+| 方法 | 说明 |
+|------|------|
+| `Init()` | 懒初始化 GL 资源；若未通过 `SetFromFiles` 填充过数据则自动调 `GenerateProceduralGradient` 用默认颜色 |
+| `SetFromFiles({+X,-X,+Y,-Y,+Z,-Z})` | 加载 6 面 LDR 图（PNG/JPG）到 sRGB 立方体贴图，自动生成 mipmap。返回 `bool` 表示全部面成功 |
+| `GenerateProceduralGradient(zenith_rgb, horizon_rgb, ground_rgb, faceSize)` | 运行时生成 RGB16F 线性 HDR 渐变；值可 > 1（HDR） |
+| `Render(view, projection)` | 由 `ForwardRenderer::RenderCamera` 在不透明绘制后、 HDR FBO 解绑前调用；depth func LEQUAL + depth mask OFF |
+| `SetEnabled(bool)` / `IsEnabled()` | 运行时开关 |
+| `SetIntensity(float)` / `GetIntensity()` | 采样后的乘数，默认 1.0 |
+| `GetCubeMap()` | `uint32_t` — 底层 GL cubemap handle，供 Phase 12 IBL 卷积使用 |
+
+#### 用法示例
+
+```cpp
+// 默认：程序化渐变，无需资产
+auto* sky = ark::EngineBase::Get().GetRenderer()->GetSkybox();
+
+// 自定义 6 面图片：
+sky->SetFromFiles({
+    ark::Paths::ResolveContent("skybox/right.png").string(),
+    ark::Paths::ResolveContent("skybox/left.png").string(),
+    ark::Paths::ResolveContent("skybox/top.png").string(),
+    ark::Paths::ResolveContent("skybox/bottom.png").string(),
+    ark::Paths::ResolveContent("skybox/front.png").string(),
+    ark::Paths::ResolveContent("skybox/back.png").string(),
+});
+
+// 或自定义渐变：
+sky->GenerateProceduralGradient(
+    0.1f, 0.2f, 0.5f,   // zenith (深蓝)
+    1.0f, 0.6f, 0.3f,   // horizon (暖橘)
+    0.05f, 0.02f, 0.01f // ground
+);
+```
+
+> **注意**：天空盒绘制到 HDR FBO 内，因此会被 `PostProcess` 的曝光和 bloom 处理。
+
+### 4.14 IBL
+
+**头文件**: `#include "engine/rendering/IBL.h"`
+
+基于图像的照明（Phase 12，split-sum 近似）。由 `ForwardRenderer` 拥有一个 (`GetIBL()`)，在首帧 Skybox 就绪后自动烘焙；切换 Skybox 后调 `ForwardRenderer::RebakeIBL()`。不经由 RHI，直接用原生 GL。
+
+#### 接口
+
+| 方法 | 说明 |
+|------|------|
+| `Bake(envCubeMap, irradianceSize=32, prefilterSize=128, brdfLutSize=512)` | 从环境 cubemap 烘焙三件套；保存/恢复 FBO + viewport + 剔除 + 深度状态 |
+| `GetIrradianceMap()` | `uint32_t` 辐照度 cubemap（RGB16F，32×32 × 6 面）— 漫反射环境项 |
+| `GetPrefilterMap()` | `uint32_t` 按粗糙度预过滤的 cubemap（RGB16F，128×128，5 mip）— 镜面环境项 |
+| `GetBrdfLUT()` | `uint32_t` 2D 查找表（RG16F，512×512，`(NdotV, roughness) → (A,B)`） |
+| `GetPrefilterMipLevels()` | `int` 当前预过滤 mip 数（通常 5） |
+| `IsValid()` | `bool` 是否已烘焙 |
+
+**PBR shader 约定**：`uIrradianceMap` → unit 5，`uPrefilterMap` → unit 6，`uBrdfLUT` → unit 7；`uIBLEnabled` / `uPrefilterMaxLod` / `uIBLDiffuseIntensity` / `uIBLSpecularIntensity` 由 `ForwardRenderer::DrawMeshRenderer` 自动设置。
+
+### 4.15 RenderSettings
+
+**头文件**: `#include "engine/rendering/RenderSettings.h"`
+
+渲染参数聚合结构体（Phase 12）。`ForwardRenderer::GetRenderSettings()` 返回可写引用。未来（Phase M10）场景序列化时将整体写入 JSON。
+
+```cpp
+struct RenderSettings {
+    float exposure = 1.0f;
+    struct { bool enabled=true; float threshold=1.0f, strength=0.6f; int iterations=5; } bloom;
+    struct { bool enabled=true; float intensity=1.0f; } sky;
+    struct { bool enabled=true; float diffuseIntensity=1.0f, specularIntensity=1.0f; } ibl;
+};
+```
+
+`ForwardRenderer` 既提供兼容的单参 setter（`SetExposure/SetBloom*`），也允许直接修改 `GetRenderSettings()` 字段，例如：
+
+```cpp
+auto& rs = renderer->GetRenderSettings();
+rs.ibl.specularIntensity = 0.7f;
+rs.bloom.strength = 0.4f;
+```
+
+### 4.16 ShadowMap
+
+**头文件**: `#include "engine/rendering/ShadowMap.h"`
+
+方向光 shadow map（Phase 13）。由 `ForwardRenderer` 拥有 (`GetShadowMap()`)，每帧由 `RenderShadowPass()` 更新。**不经由 RHI**，直接原生 GL：`GL_DEPTH_COMPONENT24` + FBO（无颜色附件）+ `GL_CLAMP_TO_BORDER`（边界外视为完全受光）。
+
+#### 接口
+
+| 方法 | 说明 |
+|------|------|
+| `Init(int resolution)` | 懒创建 / 按分辨率重建 FBO + depth 纹理 |
+| `Begin()` | 保存当前 viewport + FBO，绑定 shadow FBO，清空 depth |
+| `End()` | 恢复先前 FBO + viewport |
+| `UpdateMatrix(lightDir, focus, orthoHalfSize, near, far)` | 构造正交光源视投影矩阵，结果存入 `lightSpaceMatrix_` |
+| `GetDepthTexture()` | `uint32_t` — 底层 GL depth 纹理 |
+| `GetLightSpaceMatrix()` | `const glm::mat4&` |
+| `GetResolution()` | `int` |
+| `IsValid()` | `bool` |
+
+#### PBR shader 约定
+
+- `uShadowMap` → texture unit 8
+- `uShadowEnabled`: `0` 禁用，`1` 启用
+- `uLightSpaceMatrix`: 由 ForwardRenderer 填充
+- `uShadowDepthBias` / `uShadowNormalBias` / `uShadowPcfKernel` / `uShadowTexelSize`: 见 `RenderSettings::shadow`
+
+Shadow 只影响**第一个方向光**的直接光项；环境光 (`light.ambient`)、IBL 和其他点/聚光灯不受此 shadow map 影响（后续阶段可加各自阴影）。
+
+#### 调参示例
+
+```cpp
+auto& s = renderer->GetRenderSettings().shadow;
+s.enabled       = true;
+s.resolution    = 2048;   // 4096 for higher quality, costs bandwidth
+s.orthoHalfSize = 25.0f;  // 覆盖场景半径，过大→锯齿，过小→越出边界
+s.depthBias     = 0.002f;
+s.normalBias    = 0.010f;
+s.pcfKernel     = 2;      // 5×5 = 25 taps
+```
+
+### 4.17 SceneSerializer
+
+**头文件**: `#include "engine/rendering/SceneSerializer.h"`
+
+渲染参数 + 光源的 JSON 序列化（Phase 14 / Mini-M10）。零依赖，为外部调光/材质工具提供的"数据面"。
+
+#### 接口
+
+| 方法 | 说明 |
+|------|------|
+| `Save(path, renderer)` | 把当前 `RenderSettings` + 所有活动 `Light` 组件（按 AObject 名）写入 JSON |
+| `Load(path, renderer)` | 把 JSON 读回 `RenderSettings`；光源按名字匹配回 runtime |
+| `EnableHotReload(path)` | 启用 mtime 轮询；路径为空则禁用 |
+| `Tick(renderer)` | 每帧调用；首次 Tick 延迟执行初始 Save/Load（等待 `AObject::Init`），之后检测 mtime 变化时重新 `Load` |
+
+`ForwardRenderer::RenderFrame` 每帧自动调用 `SceneSerializer::Tick(this)`，用户代码只需调 `EnableHotReload(path)`。
+
+#### JSON Schema
+
+```json
+{
+  "renderSettings": {
+    "exposure": 1.0,
+    "bloom":  { "enabled": true, "threshold": 1.0, "strength": 0.6, "iterations": 5 },
+    "sky":    { "enabled": true, "intensity": 1.0 },
+    "ibl":    { "enabled": true, "diffuseIntensity": 1.0, "specularIntensity": 1.0 },
+    "shadow": { "enabled": true, "resolution": 2048, "orthoHalfSize": 25,
+                "nearPlane": 0.1, "farPlane": 100,
+                "depthBias": 0.002, "normalBias": 0.01, "pcfKernel": 2 }
+  },
+  "lights": [
+    { "name": "Sun", "type": "Directional",
+      "color": [1, 0.95, 0.9], "intensity": 1.0, "ambient": [0.15, 0.15, 0.15],
+      "position": [0, 0, 0], "rotationEuler": [-45, 0, 0],
+      "range": 10, "constant": 1, "linear": 0.09, "quadratic": 0.032,
+      "innerAngle": 12.5, "outerAngle": 17.5 }
+  ]
+}
+```
+
+- 光源通过 `AObject::GetName()` 匹配。JSON 中缺失的字段保留当前运行时值；runtime 中存在而 JSON 中缺失的光源保持不动
+- `rotationEuler` 为度；内部转为四元数写回 `Transform`
+- 类型字符串：`Directional` / `Point` / `Spot`
+
+#### 典型用法
+
+```cpp
+// 在 scene OnLoad 结尾：
+ark::SceneSerializer::EnableHotReload(ark::Paths::ResolveContent("lighting.json"));
+// 之后用任何工具（记事本/Python/Dear PyGui/VS Code）修改 lighting.json 保存即生效
+```
 
 ---
 

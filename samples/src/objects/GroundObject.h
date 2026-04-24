@@ -5,7 +5,8 @@
 #include "engine/rendering/Mesh.h"
 #include "engine/rendering/Material.h"
 #include "engine/rendering/MeshRenderer.h"
-#include "engine/rendering/ShaderSources.h"
+#include "engine/rendering/ForwardRenderer.h"
+#include "engine/rendering/ShaderManager.h"
 #include "engine/debug/DebugListenBus.h"
 #include "../utils/TextureUtils.h"
 #include <glm/glm.hpp>
@@ -16,9 +17,9 @@ public:
         SetName("Ground");
         auto* device = ark::EngineBase::Get().GetRHIDevice();
 
-        auto shader = std::shared_ptr<ark::RHIShader>(device->CreateShader().release());
-        if (!shader->Compile(ark::kPBR_VS, ark::kPBR_FS)) {
-            ARK_LOG_FATAL("RHI", "Failed to compile PBR shader");
+        auto shader = ark::EngineBase::Get().GetRenderer()->GetShaderManager()->Get("pbr");
+        if (!shader) {
+            ARK_LOG_FATAL("RHI", "Failed to load PBR shader");
         }
 
         auto mesh = std::shared_ptr<ark::Mesh>(ark::Mesh::CreatePlane(10.0f).release());

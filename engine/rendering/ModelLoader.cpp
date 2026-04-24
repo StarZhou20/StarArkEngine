@@ -12,11 +12,12 @@
 
 namespace ark {
 
-// Vertex layout must match kPBR_VS / kPhongVS: position(3) + normal(3) + uv(2)
+// Vertex layout must match kPBR_VS: position(3) + normal(3) + uv(2) + tangent(3)
 struct ModelVertex {
     glm::vec3 position;
     glm::vec3 normal;
     glm::vec2 uv;
+    glm::vec3 tangent;
 };
 
 static std::string GetDirectory(const std::string& filepath) {
@@ -37,6 +38,13 @@ static std::shared_ptr<Mesh> ProcessMesh(RHIDevice* device, aiMesh* aiM) {
         if (aiM->mTextureCoords[0]) {
             v.uv = {aiM->mTextureCoords[0][i].x, aiM->mTextureCoords[0][i].y};
         }
+        if (aiM->HasTangentsAndBitangents()) {
+            v.tangent = {aiM->mTangents[i].x, aiM->mTangents[i].y, aiM->mTangents[i].z};
+        } else {
+            // Fallback tangent — any vector orthogonal to the normal.
+            glm::vec3 up = (std::abs(v.normal.y) < 0.99f) ? glm::vec3(0,1,0) : glm::vec3(1,0,0);
+            v.tangent = glm::normalize(glm::cross(up, v.normal));
+        }
         vertices.push_back(v);
     }
 
@@ -56,6 +64,7 @@ static std::shared_ptr<Mesh> ProcessMesh(RHIDevice* device, aiMesh* aiM) {
         {"aPosition", VertexAttribType::Float3, 0},
         {"aNormal",   VertexAttribType::Float3, static_cast<uint32_t>(offsetof(ModelVertex, normal))},
         {"aTexCoord", VertexAttribType::Float2, static_cast<uint32_t>(offsetof(ModelVertex, uv))},
+        {"aTangent",  VertexAttribType::Float3, static_cast<uint32_t>(offsetof(ModelVertex, tangent))},
     };
 
     mesh->SetVertices(vertices.data(), vertices.size() * sizeof(ModelVertex), layout);
@@ -107,6 +116,46 @@ static std::shared_ptr<Material> ProcessMaterial(RHIDevice* device,
         if (tex) {
             material->SetDiffuseTexture(tex);
         }
+    }
+
+    // --- Phase 9: additional PBR maps (non-color = linear) ---
+    auto loadTex = [&](aiTextureType type, bool isSRGB) -> std::shared_ptr<RHITexture> {
+        if (aiMat->GetTextureCount(type) == 0) return nullptr;
+        aiString texPath;
+        aiMat->GetTexture(type, 0, &texPath);
+        std::string fullPath = directory + "/" + texPath.C_Str();
+        for (auto& c : fullPath) if (c == '\\') c = '/';
+        return TextureLoader::Load(device, fullPath, isSRGB);
+    };
+
+    // Normal map
+    if (auto t = loadTex(aiTextureType_NORMALS, false)) {
+        material->SetNormalTexture(t);
+    } else if (auto t = loadTex(aiTextureType_HEIGHT, false)) {
+        // OBJ/MTL uses `map_Bump` which Assimp tags as HEIGHT — treat as normal map.
+        material->SetNormalTexture(t);
+    }
+
+    // Metallic-roughness: glTF packs MR into a single texture.
+    // Assimp 5.x typically exposes it as DIFFUSE_ROUGHNESS (combined) or UNKNOWN.
+    if (auto t = loadTex(aiTextureType_DIFFUSE_ROUGHNESS, false)) {
+        material->SetMetallicRoughnessTexture(t);
+    } else if (auto t = loadTex(aiTextureType_METALNESS, false)) {
+        material->SetMetallicRoughnessTexture(t);
+    } else if (auto t = loadTex(aiTextureType_UNKNOWN, false)) {
+        material->SetMetallicRoughnessTexture(t);
+    }
+
+    // Ambient occlusion
+    if (auto t = loadTex(aiTextureType_AMBIENT_OCCLUSION, false)) {
+        material->SetAOTexture(t);
+    } else if (auto t = loadTex(aiTextureType_LIGHTMAP, false)) {
+        material->SetAOTexture(t);
+    }
+
+    // Emissive
+    if (auto t = loadTex(aiTextureType_EMISSIVE, true)) {
+        material->SetEmissiveTexture(t);
     }
 
     return material;

@@ -14,6 +14,9 @@ Window::Window(int width, int height, const std::string& title)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    // Request an sRGB-capable default framebuffer so the GPU does
+    // linear→sRGB on write when GL_FRAMEBUFFER_SRGB is enabled.
+    glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_TRUE);
 
     window_ = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
     if (!window_) {
@@ -31,6 +34,9 @@ Window::Window(int width, int height, const std::string& title)
         errMsg += reinterpret_cast<const char*>(glewGetErrorString(err));
         ARK_LOG_FATAL("Platform", errMsg);
     }
+
+    // Enable sRGB framebuffer: shaders output LINEAR; GPU converts to sRGB.
+    glEnable(GL_FRAMEBUFFER_SRGB);
 
     ARK_LOG_INFO("Platform", "Window created: " + std::to_string(width) + "x" + std::to_string(height));
     ARK_LOG_INFO("Platform", std::string("OpenGL version: ") +
