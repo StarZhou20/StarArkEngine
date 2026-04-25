@@ -4,3 +4,7 @@
 [[mod]]
 name = "testmod"
 enabled = true
+
+[[mod]]
+name = "hellomod"
+enabled = true

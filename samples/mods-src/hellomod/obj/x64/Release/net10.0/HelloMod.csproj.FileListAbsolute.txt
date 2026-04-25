@@ -1,0 +1,13 @@
+D:\Code\StarArkEngine\build\managed-mods\hellomod\HelloMod.deps.json
+D:\Code\StarArkEngine\build\managed-mods\hellomod\HelloMod.dll
+D:\Code\StarArkEngine\build\managed-mods\hellomod\HelloMod.pdb
+D:\Code\StarArkEngine\samples\mods-src\hellomod\obj\x64\Release\net10.0\HelloMod.csproj.AssemblyReference.cache
+D:\Code\StarArkEngine\samples\mods-src\hellomod\obj\x64\Release\net10.0\HelloMod.GeneratedMSBuildEditorConfig.editorconfig
+D:\Code\StarArkEngine\samples\mods-src\hellomod\obj\x64\Release\net10.0\HelloMod.AssemblyInfoInputs.cache
+D:\Code\StarArkEngine\samples\mods-src\hellomod\obj\x64\Release\net10.0\HelloMod.AssemblyInfo.cs
+D:\Code\StarArkEngine\samples\mods-src\hellomod\obj\x64\Release\net10.0\HelloMod.csproj.CoreCompileInputs.cache
+D:\Code\StarArkEngine\samples\mods-src\hellomod\obj\x64\Release\net10.0\HelloMod.sourcelink.json
+D:\Code\StarArkEngine\samples\mods-src\hellomod\obj\x64\Release\net10.0\HelloMod.dll
+D:\Code\StarArkEngine\samples\mods-src\hellomod\obj\x64\Release\net10.0\refint\HelloMod.dll
+D:\Code\StarArkEngine\samples\mods-src\hellomod\obj\x64\Release\net10.0\HelloMod.pdb
+D:\Code\StarArkEngine\samples\mods-src\hellomod\obj\x64\Release\net10.0\ref\HelloMod.dll

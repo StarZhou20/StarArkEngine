@@ -28,6 +28,12 @@ public:
     /// Update the OS-level window title (used for runtime FPS display).
     void SetTitle(const std::string& title);
 
+    /// Set the window icon (top-left corner / taskbar) from a file on disk.
+    /// On Windows accepts .ico directly via the Win32 loader. Returns true
+    /// on success. Path is intentionally a runtime parameter so the icon
+    /// asset can be swapped without recompiling.
+    bool SetIconFromFile(const std::string& path);
+
     /// The title the window was originally constructed with (for FPS prefix).
     const std::string& GetBaseTitle() const { return baseTitle_; }
 

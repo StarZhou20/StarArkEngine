@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>StarArk.Scripting</RootNamespace>
+    <AssemblyName>StarArk.Scripting</AssemblyName>
+
+    <!-- Force runtimeconfig.json to be emitted next to the DLL even though
+         this is a library (CoreCLR hosting requires it). -->
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+
+    <!-- Keep this lean. We never want the SDK to inject extra props that
+         pull in WinForms / WPF / ASP.NET. -->
+    <UseAppHost>false</UseAppHost>
+  </PropertyGroup>
+</Project>

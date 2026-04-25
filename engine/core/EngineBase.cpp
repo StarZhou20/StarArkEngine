@@ -3,10 +3,13 @@
 #include "AScene.h"
 #include "engine/platform/Input.h"
 #include "engine/platform/Time.h"
+#include "engine/platform/Paths.h"
 #include "engine/debug/DebugListenBus.h"
 #include "engine/rendering/Camera.h"
+#include "engine/scripting/ScriptHost.h"
 #include <algorithm>
 #include <cstdio>
+#include <filesystem>
 
 namespace ark {
 
@@ -22,15 +25,41 @@ void EngineBase::Initialize(int width, int height, const std::string& title) {
     Input::Init(window_->GetNativeHandle());
     Time::Init();
 
+    // Pick the first .ico shipped under <exeDir>/icon/ as the window icon.
+    // Filename is intentionally not hard-coded so the asset can be swapped
+    // (CMake copies whatever .ico is under <repo>/icon/ next to the exe).
+    {
+        std::error_code ec;
+        std::filesystem::path iconDir = Paths::GameRoot() / "icon";
+        if (std::filesystem::is_directory(iconDir, ec)) {
+            for (const auto& entry : std::filesystem::directory_iterator(iconDir, ec)) {
+                if (!entry.is_regular_file()) continue;
+                auto ext = entry.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (ext == ".ico") {
+                    window_->SetIconFromFile(entry.path().string());
+                    break;
+                }
+            }
+        }
+    }
+
     rhiDevice_ = CreateOpenGLDevice();
     renderer_ = std::make_unique<ForwardRenderer>(rhiDevice_.get());
     sceneManager_ = std::make_unique<SceneManager>(this);
+
+    // Phase 15.F: boot the C# scripting host. Stub when STARARK_ENABLE_SCRIPTING
+    // is OFF; never fatal — engine keeps running without scripts on failure.
+    ScriptHost::Get().Initialize(Paths::GameRoot().string());
 
     ARK_LOG_INFO("Core", "Engine initialized successfully");
 }
 
 void EngineBase::Shutdown() {
     ARK_LOG_INFO("Core", "StarArk Engine shutting down");
+    // Scripts first so managed code can still touch live engine state.
+    ScriptHost::Get().Shutdown();
     // Scene is destroyed first
     sceneManager_.reset();
     // Then persistent objects
@@ -47,6 +76,13 @@ void EngineBase::MainLoop() {
     // number is readable rather than jittering every frame.
     float fpsAccumTime   = 0.0f;
     int   fpsAccumFrames = 0;
+
+    // Fixed-timestep accumulator drives ScriptHost::OnFixedTick (Unity-style
+    // FixedUpdate). Step is 1/60s; accumulator capped to avoid the
+    // "spiral of death" after long stalls (e.g. a debug breakpoint).
+    constexpr float kFixedDt           = 1.0f / 60.0f;
+    constexpr float kMaxAccumPerFrame  = 0.25f; // ≤15 substeps per frame
+    float fixedAccum = 0.0f;
 
     while (!window_->ShouldClose()) {
         // 1. Poll Input
@@ -84,11 +120,31 @@ void EngineBase::MainLoop() {
         // 4. PreInit/Init/PostInit new objects
         DrainPendingObjects();
 
+        // 4.5a. MOD FixedLoop — drain the fixed-timestep accumulator.
+        // Same semantics as Unity FixedUpdate: zero or more calls per frame
+        // at exactly kFixedDt seconds each. Runs before MOD Loop so MODs can
+        // see physics-style state ahead of game logic.
+        fixedAccum += dt;
+        if (fixedAccum > kMaxAccumPerFrame) fixedAccum = kMaxAccumPerFrame;
+        while (fixedAccum >= kFixedDt) {
+            ScriptHost::Get().OnFixedTick(kFixedDt);
+            fixedAccum -= kFixedDt;
+        }
+
+        // 4.5b. MOD Loop — runs before native StepTick so MOD scripts can
+        // observe the previous frame's state plus objects spawned during
+        // DrainPendingObjects, and influence what runs this frame.
+        ScriptHost::Get().OnTick(dt);
+
         // 5-6. Loop
         StepTick(dt);
 
         // 7-8. PostLoop
         StepPostTick(dt);
+
+        // 8.5. MOD PostLoop — after native PostLoop so MOD scripts see the
+        // fully-updated world before transforms/render.
+        ScriptHost::Get().OnPostTick(dt);
 
         // 9. Scene-level Tick
         AScene* scene = sceneManager_->GetActiveScene();

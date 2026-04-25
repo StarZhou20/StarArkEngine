@@ -1,0 +1,14 @@
+D:\Code\StarArkEngine\build\managed\StarArk.Scripting.deps.json
+D:\Code\StarArkEngine\build\managed\StarArk.Scripting.runtimeconfig.json
+D:\Code\StarArkEngine\build\managed\StarArk.Scripting.dll
+D:\Code\StarArkEngine\build\managed\StarArk.Scripting.pdb
+D:\Code\StarArkEngine\scripts\StarArk.Scripting\obj\x64\Release\net10.0\StarArk.Scripting.GeneratedMSBuildEditorConfig.editorconfig
+D:\Code\StarArkEngine\scripts\StarArk.Scripting\obj\x64\Release\net10.0\StarArk.Scripting.AssemblyInfoInputs.cache
+D:\Code\StarArkEngine\scripts\StarArk.Scripting\obj\x64\Release\net10.0\StarArk.Scripting.AssemblyInfo.cs
+D:\Code\StarArkEngine\scripts\StarArk.Scripting\obj\x64\Release\net10.0\StarArk.Scripting.csproj.CoreCompileInputs.cache
+D:\Code\StarArkEngine\scripts\StarArk.Scripting\obj\x64\Release\net10.0\StarArk.Scripting.sourcelink.json
+D:\Code\StarArkEngine\scripts\StarArk.Scripting\obj\x64\Release\net10.0\StarArk.Scripting.dll
+D:\Code\StarArkEngine\scripts\StarArk.Scripting\obj\x64\Release\net10.0\refint\StarArk.Scripting.dll
+D:\Code\StarArkEngine\scripts\StarArk.Scripting\obj\x64\Release\net10.0\StarArk.Scripting.pdb
+D:\Code\StarArkEngine\scripts\StarArk.Scripting\obj\x64\Release\net10.0\StarArk.Scripting.genruntimeconfig.cache
+D:\Code\StarArkEngine\scripts\StarArk.Scripting\obj\x64\Release\net10.0\ref\StarArk.Scripting.dll

@@ -1,7 +1,7 @@
 # StarArk 工程开发日志 (DevLog)
 
 > **用途**: 供 AI 编码助手阅读，快速了解项目当前状态、已完成内容、待办事项和技术约束。  
-> **最后更新**: 2026-04-25
+> **最后更新**: 2026-04-25（15.F.3 完成 — MOD 可改世界）
 
 ---
 
@@ -22,13 +22,19 @@
 
 | 阶段 | 产物 | 状态 |
 |------|------|------|
-| 15.A | 组件反射系统（TypeRegistry + FieldInfo） | 🚧 开工 |
-| 15.B | GUID + `AObject::GetGuid()` | ⏳ |
-| 15.C | 场景 TOML 序列化（全组件覆盖） | ⏳ |
-| 15.D | 资源覆盖 VFS（`mods/` 覆盖 `content/`） | ⏳ |
-| **v0.2 tag**: 理论可 MOD 的最小引擎 |||
+| 15.A | 组件反射系统（TypeRegistry + FieldInfo） | ✅ |
+| 15.B | GUID + `AObject::GetGuid()` | ✅ |
+| 15.C | 场景 TOML 序列化（全组件覆盖） | ✅ |
+| 15.D | 资源覆盖 VFS（`mods/` 覆盖 `content/`） | ✅ |
+| **v0.2 tag**: 理论可 MOD 的最小引擎 | | ✅ |
 | 15.E | 反射驱动 Inspector（WPF） | ⏳ v0.2.x |
-| 15.F | C# 脚本宿主（CoreCLR） | ⏳ v0.2.x |
+| 15.F.1 | CoreCLR 实接入（hostfxr + UnmanagedCallersOnly） | ✅ |
+| 15.F.2 | Native↔Managed Bridge + MOD 发现/加载 | ✅ |
+| 15.F.2.1 | Unity 风格 7 阶段 MOD 生命周期 | ✅ |
+| 15.F.3 | 引擎 API 暴露 v2（Spawn/Find/Destroy/Transform/Scene） | ✅ |
+| 15.F.4 | MOD 热重载（collectible ALC + file watcher） | ⏳ |
+| 15.F.5 | mod.toml 元数据 + load_order 排序 | ⏳ |
+| 15.F.6 | ScriptApi v3：Camera 控制 + Component 反射访问 | ⏳ |
 
 **v0.2 验收**（5 条，全部可被 AI 验证）:
 
@@ -451,6 +457,62 @@ StarArk/
   1. 启动 → 生成 `content/lighting.json`，正确写入 3 盏光 + 全量 RenderSettings
   2. 外部编辑 `lighting.json`（改 `exposure: 0.5`、改 `intensity: 5`）保存 → 日志出现 `SceneSerializer: loaded ... (3 lights matched)`，画面实时反映
 - **使用方式（外部工具）**：任何语言（Python/Node/纯记事本）修改 JSON 保存即生效。下一步可以用 200 行 Dear PyGui 或 tkinter 做一个滑块工具，实时调光。
+
+---
+
+### Phase 15.F: C# 脚本宿主 + MOD 系统 ✅（15.F.1 → 15.F.3 完成）
+
+**目标**: 把"可改数据 + 可换资源"的 v0.2 引擎升级为"可改行为" — MOD 用 C# 写脚本，引擎调度生命周期，MOD 通过 `Bridge` 直接读写引擎对象。
+
+#### 15.F.1 CoreCLR 实接入
+- 托管项目 `scripts/StarArk.Scripting/`：`net10.0` lib，`Engine.cs` 暴露 `[UnmanagedCallersOnly]` 静态入口
+- `engine/scripting/ScriptHost.cpp`：nethost.dll → `get_hostfxr_path` → hostfxr → `hostfxr_initialize_for_runtime_config(<exe>/scripting/StarArk.Scripting.runtimeconfig.json)` → `load_assembly_and_get_function_pointer` 解出托管入口
+- `engine/CMakeLists.txt`：`option STARARK_ENABLE_SCRIPTING`（OFF 默认）；ON 时自动找 `Microsoft.NETCore.App.Host.win-x64` pack + `dotnet build -c Release -o build/managed`
+- exe POST_BUILD 把 `build/managed/*` 部署到 `<exe>/scripting/` + `nethost.dll` 到 `<exe>/`
+- runtimeconfig.json 必须由 `dotnet build` 生成，纯 csc 不行；同进程不能二次 host CoreCLR
+
+#### 15.F.2 Bridge + MOD 发现
+- **ScriptApi 函数指针表**（`engine/scripting/ScriptHost.h`）：append-only struct，内含 `version` 字段；managed 端 `Bridge.RequiredApiVersion` 不匹配则拒绝绑定
+- v1 字段：`Log` / `GetDeltaTime` / `GetTotalTime` / `GetKey` / `GetKeyDown`；native trampolines 走 `DebugListenBus::Broadcast` / `Time::*` / `Input::*`
+- `OnEngineStart` 签名：`int(ArkScriptApi*, byte* modsDirUtf8)`，把 `<gameRoot>/mods` UTF-8 传给托管
+- managed 三件套：
+  - `Bridge.cs`：`ArkScriptApi` struct 1:1 镜像；静态门面 `Bridge.Log/LogInfo/...`；UTF-8 走 `stackalloc(<=1024)`，省 GC
+  - `IMod.cs`：MOD 接口（default 方法 = 旧 MOD 不必全实现）
+  - `Engine.cs`：`OnEngineStart` 调 `Bridge.Initialize`；扫 `<modsDir>/<modname>/scripts/*.dll`；每个 DLL 一个 `ModLoadContext : AssemblyLoadContext(isCollectible:true)`；`Activator.CreateInstance` 实例化 `IMod`
+- **关键坑**：`ModLoadContext.Load` 必须显式返回 `typeof(IMod).Assembly` 当请求 `"StarArk.Scripting"` —— 返回 null 会让 Default ALC 在 `<exe>/` probing 不到 `<exe>/scripting/StarArk.Scripting.dll`，触发 `ReflectionTypeLoadException`
+- 示例 MOD：`samples/mods-src/hellomod/`；CMake 单独 `dotnet build` → `build/managed-mods/hellomod/HelloMod.dll`，POST_BUILD 部署到 `<exe>/mods/hellomod/scripts/HelloMod.dll`
+- **目录约定**：MOD **源码**放 `samples/mods-src/<name>/`（不会被部署），**运行时资源**（贴图/网格）放 `samples/mods/<name>/`（整目录 `copy_directory` 到 exe 旁）
+
+#### 15.F.2.1 Unity 风格生命周期
+- `IMod` 由 `OnLoad/OnFrame/OnUnload` 升级为 7 个 default 方法：
+  `PreInit (Awake) → OnLoad (OnEnable) → Init (Start) → FixedLoop (FixedUpdate) → Loop (Update) → PostLoop (LateUpdate) → OnUnload (OnDestroy)`
+- `ScriptHost` 把单一 `OnFrame` 拆为 `OnFixedTick / OnTick / OnPostTick`；`Engine.cs` 暴露 5 个 `[UnmanagedCallersOnly]`
+- `EngineBase::MainLoop` 帧内插入：
+  1. `fixedAccum += dt`（cap 0.25s 防 spiral-of-death），while ≥ 1/60 调 `OnFixedTick(1/60)`
+  2. `OnTick(dt)` ＜在 `StepTick` 之前＞
+  3. `StepTick / StepPostTick`
+  4. `OnPostTick(dt)` ＜在 `StepPostTick` 之后＞
+- `Init` 在 managed 端 lazy-fire：每个 mod 第一次 `OnTick` 之前由 `LoadedMod.Started` 标记触发
+- 实测 hellomod 全 7 阶段命中：`FixedLoop=600/10s=60Hz` 准确，`Loop≈177fps`，关闭窗口正常 `OnUnload`
+
+#### 15.F.3 引擎 API 暴露（ScriptApi v2）
+- ScriptApi 升级到 v2，append-only 加 8 个函数指针：
+  - `FindObjectByName(name) → handle`（active scene 内查找，0=未找到）
+  - `SpawnObject(name) → handle`（创建空 `AObject` 进 active scene 的 pendingList）
+  - `DestroyObject(handle)`
+  - `GetObjectName / SetObjectName`（"两次调用"协议：第一次 buf=null 探所需字节）
+  - `GetPosition / SetPosition`（**LOCAL** 坐标，spawn 出来对象通常无 parent）
+  - `GetActiveSceneName`
+- `ArkObjectHandle = uint64`，等于 `AObject::GetId()`
+- `ScriptHost.cpp` 内 `ArkLookup_(handle)` 同时遍历 `GetObjectList() + GetPendingList()`，让本帧 spawn 出来的对象当帧可寻
+- `Bridge.cs`：新增强类型 `ObjectHandle`/`Vec3` + 8 个静态门面（`Bridge.Find/Spawn/Destroy/GetName/SetName/GetPosition/SetPosition/ActiveSceneName`）
+- `HelloMod` 升级演示：F1 spawn `"HelloMod.Marker"` → 在 origin 周围半径 3、周期 4s 圆周运动；F2 destroy；F3 print pos + 找 `MainCamera`
+- 实测：`[INFO] [HelloMod] OnLoad. Active scene = ''. F1=spawn  F2=destroy  F3=print` —— 注意 `OnLoad` 在 `DiscoverAndLoadMods` 时 fire，此时 active scene 还没 activate，符合预期
+
+#### 15.F 后续候选（未做）
+- **15.F.4 MOD 热重载**：ALC 已 collectible，加 `FileSystemWatcher` → `Unload()` 旧 ALC → 重新 `LoadFromAssemblyPath`；MOD 状态需 mod 自己持久化（可提供 `IMod.SaveState/LoadState`）
+- **15.F.5 mod.toml**：每个 MOD 一个 `mod.toml`（id/name/version/depends/load_after）；`<gameRoot>/mods/load_order.toml` 已用作启用列表，但还没真正按依赖排序
+- **15.F.6 ScriptApi v3**：暴露 Camera 控制（GetActiveCameraHandle / SetCameraTransform / SetFovY）+ Component 反射访问（`AddComponent(handle, typeName)` / `GetComponentField(handle, typeName, fieldName)`，复用 15.A 反射）
 
 ---
 

@@ -3,6 +3,13 @@
 #include "engine/debug/DebugListenBus.h"
 #include <string>
 
+#if defined(_WIN32)
+#  define WIN32_LEAN_AND_MEAN
+#  include <windows.h>
+#  define GLFW_EXPOSE_NATIVE_WIN32
+#  include <GLFW/glfw3native.h>
+#endif
+
 namespace ark {
 
 Window::Window(int width, int height, const std::string& title)
@@ -64,6 +71,44 @@ void Window::SwapBuffers() {
 
 void Window::SetTitle(const std::string& title) {
     if (window_) glfwSetWindowTitle(window_, title.c_str());
+}
+
+bool Window::SetIconFromFile(const std::string& path) {
+    if (!window_) return false;
+#if defined(_WIN32)
+    // Convert UTF-8 path → wide for LoadImageW.
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
+    if (wlen <= 0) return false;
+    std::wstring wpath(static_cast<size_t>(wlen - 1), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, wpath.data(), wlen);
+
+    HWND hwnd = glfwGetWin32Window(window_);
+    if (!hwnd) return false;
+
+    // Load both small (title bar / taskbar small) and large (Alt-Tab) icons
+    // so all OS surfaces use the supplied artwork.
+    HICON hIconBig = static_cast<HICON>(LoadImageW(
+        nullptr, wpath.c_str(), IMAGE_ICON,
+        GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON),
+        LR_LOADFROMFILE | LR_DEFAULTCOLOR));
+    HICON hIconSmall = static_cast<HICON>(LoadImageW(
+        nullptr, wpath.c_str(), IMAGE_ICON,
+        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
+        LR_LOADFROMFILE | LR_DEFAULTCOLOR));
+
+    if (!hIconBig && !hIconSmall) {
+        ARK_LOG_WARN("Platform", "Failed to load window icon from: " + path);
+        return false;
+    }
+    if (hIconBig)   SendMessageW(hwnd, WM_SETICON, ICON_BIG,   reinterpret_cast<LPARAM>(hIconBig));
+    if (hIconSmall) SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(hIconSmall));
+    ARK_LOG_INFO("Platform", "Window icon set from: " + path);
+    return true;
+#else
+    (void)path;
+    ARK_LOG_WARN("Platform", "SetIconFromFile not implemented on this platform");
+    return false;
+#endif
 }
 
 void Window::FramebufferSizeCallback(GLFWwindow* window, int width, int height) {

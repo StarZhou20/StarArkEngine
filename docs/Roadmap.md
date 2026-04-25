@@ -59,13 +59,19 @@ content/
 
 | Phase | 里程碑 | 主题 | 为什么是这个顺序 |
 |-------|-------|------|-----------------|
-| 15.A | v0.2 | 组件反射系统 | 没反射，所有序列化都是手工活；有反射，Inspector/TOML/schema 全免费 |
-| 15.B | v0.2 | GUID + 对象身份 | MOD load order + record override 的唯一基础（xEdit/Wrye Bash 的核心机制） |
-| 15.C | v0.2 | 场景 TOML 序列化 | 延续 Phase 14 的 SceneSerializer 成功经验，范围扩到所有组件 + 对象 |
-| 15.D | v0.2 | 资源覆盖 VFS | `mods/` 覆盖 `content/`；贴图/模型/shader 换皮 MOD 立刻可做，成本极低 |
-| **v0.2 tag**：理论可 MOD 的最小引擎 |||
-| 15.E | v0.2.x | 反射驱动 Inspector | 把 Lighting Tuner 升级为"任意组件自动出 UI"；编辑器免费拿 |
-| 15.F | v0.2.x | C# 脚本（CoreCLR） | 解锁 MOD 改行为；前置是 15.A 反射（否则 C# 访问不了组件） |
+| 15.A | v0.2 | 组件反射系统 | ✅ 完成 |
+| 15.B | v0.2 | GUID + 对象身份 | ✅ 完成 |
+| 15.C | v0.2 | 场景 TOML 序列化 | ✅ 完成 |
+| 15.D | v0.2 | 资源覆盖 VFS | ✅ 完成（mods/ 覆盖 content/，load_order.toml 启用列表） |
+| **v0.2 tag**：理论可 MOD 的最小引擎 ✅ |||
+| 15.E | v0.2.x | 反射驱动 Inspector | ⏳ 把 Lighting Tuner 升级为"任意组件自动出 UI" |
+| 15.F.1 | v0.2.x | C# 脚本 — CoreCLR 实接入 | ✅ |
+| 15.F.2 | v0.2.x | Native↔Managed Bridge + MOD 加载 | ✅ |
+| 15.F.2.1 | v0.2.x | Unity 风格 7 阶段 MOD 生命周期 | ✅ |
+| 15.F.3 | v0.2.x | 引擎 API 暴露 v2（Spawn/Find/Transform/Scene） | ✅ |
+| 15.F.4 | v0.2.x | MOD 热重载（collectible ALC + watcher） | ⏳ |
+| 15.F.5 | v0.2.x | mod.toml 元数据 + 依赖排序 | ⏳ |
+| 15.F.6 | v0.2.x | ScriptApi v3：Camera + Component 反射访问 | ⏳ |
 | 16 | v0.3 | 级联阴影 CSM | 开放世界远景阴影必备，但必须在 RenderSettings 反射之后加（不然 MOD 改不了参数） |
 | 17 | v0.3 | `.ark.mesh` + Asset 管线（hash/缓存） | 支撑大量资产；依赖 15.D 的 VFS |
 | 18 | v0.3 | Blender exporter 插件 | 依赖 15.C 的 TOML schema |

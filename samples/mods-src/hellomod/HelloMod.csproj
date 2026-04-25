@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>HelloMod</RootNamespace>
+    <AssemblyName>HelloMod</AssemblyName>
+
+    <!-- MODs are libraries plugged into the engine; no host needed. -->
+    <UseAppHost>false</UseAppHost>
+
+    <!-- We don't want StarArk.Scripting.dll copied next to HelloMod.dll —
+         the engine already loads its own copy from <exe>/scripting/. -->
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reference the StarArk.Scripting assembly that ships with the
+         engine. The MSBuild property points at the engine's managed
+         output dir; CMake passes ARK_SCRIPTING_REF when building. -->
+    <Reference Include="StarArk.Scripting"
+               Condition="Exists('$(ArkScriptingRef)')">
+      <HintPath>$(ArkScriptingRef)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

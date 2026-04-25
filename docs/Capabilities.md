@@ -72,7 +72,7 @@
 
 | 不做 | 理由 / 什么时候有 |
 |------|------------------|
-| **脚本语言**（C# / Lua / Python） | v0.2+ 规划 C# 热加载；v0.1 只有 C++ |
+| **脚本语言**（C# / Lua / Python） | ✅ v0.2.x：C# (CoreCLR / .NET 10) MOD 系统已上线；详见 [DevLog Phase 15.F](DevLog.md)。Lua/Python 不计划。 |
 | **场景对象序列化** | 只有 `RenderSettings + Light` 序列化（`SceneSerializer`），其它组件/对象/材质/网格没有序列化 |
 | **Prefab / 预制体** | 没有，手写构造 |
 | **运行时 Inspector / GUI 编辑器** | 没有；外部 WPF Lighting Tuner 只编辑 `lighting.json` |
