@@ -6,7 +6,7 @@
 namespace ark {
 
 Window::Window(int width, int height, const std::string& title)
-    : width_(width), height_(height) {
+    : width_(width), height_(height), baseTitle_(title) {
     if (!glfwInit()) {
         ARK_LOG_FATAL("Platform", "Failed to initialize GLFW");
     }
@@ -60,6 +60,10 @@ void Window::PollEvents() {
 
 void Window::SwapBuffers() {
     glfwSwapBuffers(window_);
+}
+
+void Window::SetTitle(const std::string& title) {
+    if (window_) glfwSetWindowTitle(window_, title.c_str());
 }
 
 void Window::FramebufferSizeCallback(GLFWwindow* window, int width, int height) {

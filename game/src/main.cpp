@@ -26,6 +26,6 @@ int main(int argc, char** argv) {
     ark::ConsoleDebugListener consoleListener;
     ark::FileDebugListener    fileListener;
 
-    ark::EngineBase::Get().Run<EmptyScene>(1280, 720, "StarArk Game");
+    ark::EngineBase::Get().Run<EmptyScene>(2560, 1440, "StarArk Game");
     return 0;
 }

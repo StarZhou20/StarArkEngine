@@ -6,6 +6,7 @@
 #include "engine/debug/DebugListenBus.h"
 #include "engine/rendering/Camera.h"
 #include <algorithm>
+#include <cstdio>
 
 namespace ark {
 
@@ -42,6 +43,11 @@ void EngineBase::Shutdown() {
 }
 
 void EngineBase::MainLoop() {
+    // FPS title refresh: average frame times over a ~0.25s window so the
+    // number is readable rather than jittering every frame.
+    float fpsAccumTime   = 0.0f;
+    int   fpsAccumFrames = 0;
+
     while (!window_->ShouldClose()) {
         // 1. Poll Input
         window_->PollEvents();
@@ -50,6 +56,20 @@ void EngineBase::MainLoop() {
         // 2. Time update
         Time::Update();
         float dt = Time::DeltaTime();
+
+        // FPS title (updated ~4x/sec)
+        fpsAccumTime   += dt;
+        fpsAccumFrames += 1;
+        if (fpsAccumTime >= 0.25f) {
+            float fps = float(fpsAccumFrames) / fpsAccumTime;
+            float ms  = fpsAccumTime * 1000.0f / float(fpsAccumFrames);
+            char buf[160];
+            std::snprintf(buf, sizeof(buf), "%s  |  %.0f FPS  (%.2f ms)",
+                          window_->GetBaseTitle().c_str(), fps, ms);
+            window_->SetTitle(buf);
+            fpsAccumTime   = 0.0f;
+            fpsAccumFrames = 0;
+        }
 
         // 3. Check window resize
         if (window_->WasResized()) {

@@ -309,7 +309,52 @@ bool SceneSerializer::Save(const std::filesystem::path& path, ForwardRenderer* r
     os << "\"farPlane\": ";      w.Float(rs.shadow.farPlane);      os << ", ";
     os << "\"depthBias\": ";     w.Float(rs.shadow.depthBias);     os << ", ";
     os << "\"normalBias\": ";    w.Float(rs.shadow.normalBias);    os << ", ";
-    os << "\"pcfKernel\": "      << rs.shadow.pcfKernel << "}\n";
+    os << "\"pcfKernel\": "      << rs.shadow.pcfKernel << "},\n";
+
+    w.Indent(); os << "\"ssao\": {";
+    os << "\"enabled\": "   << (rs.ssao.enabled ? "true" : "false") << ", ";
+    os << "\"intensity\": "; w.Float(rs.ssao.intensity); os << ", ";
+    os << "\"radius\": ";    w.Float(rs.ssao.radius);    os << ", ";
+    os << "\"bias\": ";      w.Float(rs.ssao.bias);      os << ", ";
+    os << "\"samples\": "    << rs.ssao.samples << "},\n";
+
+    w.Indent(); os << "\"contactShadow\": {";
+    os << "\"enabled\": "      << (rs.contactShadow.enabled ? "true" : "false") << ", ";
+    os << "\"steps\": "        << rs.contactShadow.steps << ", ";
+    os << "\"maxDistance\": "; w.Float(rs.contactShadow.maxDistance); os << ", ";
+    os << "\"thickness\": ";   w.Float(rs.contactShadow.thickness);   os << ", ";
+    os << "\"strength\": ";    w.Float(rs.contactShadow.strength);    os << "},\n";
+
+    w.Indent(); os << "\"fxaa\": {";
+    os << "\"enabled\": " << (rs.fxaa.enabled ? "true" : "false") << "},\n";
+
+    w.Indent(); os << "\"taa\": {";
+    os << "\"enabled\": "  << (rs.taa.enabled ? "true" : "false") << ", ";
+    os << "\"blendNew\": "; w.Float(rs.taa.blendNew); os << "},\n";
+
+    w.Indent(); os << "\"ssr\": {";
+    os << "\"enabled\": "      << (rs.ssr.enabled ? "true" : "false") << ", ";
+    os << "\"maxDistance\": "; w.Float(rs.ssr.maxDistance); os << ", ";
+    os << "\"steps\": "        << rs.ssr.steps << ", ";
+    os << "\"thickness\": ";   w.Float(rs.ssr.thickness); os << ", ";
+    os << "\"fadeEdge\": ";    w.Float(rs.ssr.fadeEdge);  os << "},\n";
+
+    w.Indent(); os << "\"tonemap\": {";
+    os << "\"mode\": " << rs.tonemap.mode << "},\n";
+
+    w.Indent(); os << "\"msaa\": {";
+    os << "\"samples\": " << rs.msaa.samples << "},\n";
+
+    w.Indent(); os << "\"fog\": {";
+    os << "\"enabled\": "       << (rs.fog.enabled ? "true" : "false") << ", ";
+    os << "\"density\": ";       w.Float(rs.fog.density);       os << ", ";
+    os << "\"heightStart\": ";   w.Float(rs.fog.heightStart);   os << ", ";
+    os << "\"heightFalloff\": "; w.Float(rs.fog.heightFalloff); os << ", ";
+    os << "\"maxOpacity\": ";    w.Float(rs.fog.maxOpacity);    os << ", ";
+    os << "\"color\": [";
+    w.Float(rs.fog.color[0]); os << ", ";
+    w.Float(rs.fog.color[1]); os << ", ";
+    w.Float(rs.fog.color[2]); os << "]}\n";
 
     w.indent = 1;
     w.Indent(); os << "},\n";
@@ -413,6 +458,60 @@ bool SceneSerializer::Load(const std::filesystem::path& path, ForwardRenderer* r
             rs.shadow.depthBias     = FloatOr(so, "depthBias",     rs.shadow.depthBias);
             rs.shadow.normalBias    = FloatOr(so, "normalBias",    rs.shadow.normalBias);
             rs.shadow.pcfKernel     = IntOr  (so, "pcfKernel",     rs.shadow.pcfKernel);
+        }
+        if (const JValue* sa = Find(o, "ssao"); sa && sa->IsObject()) {
+            const JObject& so = sa->AsObject();
+            rs.ssao.enabled   = BoolOr (so, "enabled",   rs.ssao.enabled);
+            rs.ssao.intensity = FloatOr(so, "intensity", rs.ssao.intensity);
+            rs.ssao.radius    = FloatOr(so, "radius",    rs.ssao.radius);
+            rs.ssao.bias      = FloatOr(so, "bias",      rs.ssao.bias);
+            rs.ssao.samples   = IntOr  (so, "samples",   rs.ssao.samples);
+        }
+        if (const JValue* cs = Find(o, "contactShadow"); cs && cs->IsObject()) {
+            const JObject& co = cs->AsObject();
+            rs.contactShadow.enabled     = BoolOr (co, "enabled",     rs.contactShadow.enabled);
+            rs.contactShadow.steps       = IntOr  (co, "steps",       rs.contactShadow.steps);
+            rs.contactShadow.maxDistance = FloatOr(co, "maxDistance", rs.contactShadow.maxDistance);
+            rs.contactShadow.thickness   = FloatOr(co, "thickness",   rs.contactShadow.thickness);
+            rs.contactShadow.strength    = FloatOr(co, "strength",    rs.contactShadow.strength);
+        }
+        if (const JValue* fx = Find(o, "fxaa"); fx && fx->IsObject()) {
+            rs.fxaa.enabled = BoolOr(fx->AsObject(), "enabled", rs.fxaa.enabled);
+        }
+        if (const JValue* ta = Find(o, "taa"); ta && ta->IsObject()) {
+            const JObject& to = ta->AsObject();
+            rs.taa.enabled  = BoolOr (to, "enabled",  rs.taa.enabled);
+            rs.taa.blendNew = FloatOr(to, "blendNew", rs.taa.blendNew);
+        }
+        if (const JValue* sr = Find(o, "ssr"); sr && sr->IsObject()) {
+            const JObject& so = sr->AsObject();
+            rs.ssr.enabled     = BoolOr (so, "enabled",     rs.ssr.enabled);
+            rs.ssr.maxDistance = FloatOr(so, "maxDistance", rs.ssr.maxDistance);
+            rs.ssr.steps       = IntOr  (so, "steps",       rs.ssr.steps);
+            rs.ssr.thickness   = FloatOr(so, "thickness",   rs.ssr.thickness);
+            rs.ssr.fadeEdge    = FloatOr(so, "fadeEdge",    rs.ssr.fadeEdge);
+        }
+        if (const JValue* tm = Find(o, "tonemap"); tm && tm->IsObject()) {
+            rs.tonemap.mode = IntOr(tm->AsObject(), "mode", rs.tonemap.mode);
+        }
+        if (const JValue* ma = Find(o, "msaa"); ma && ma->IsObject()) {
+            rs.msaa.samples = IntOr(ma->AsObject(), "samples", rs.msaa.samples);
+        }
+        if (const JValue* fg = Find(o, "fog"); fg && fg->IsObject()) {
+            const JObject& fo = fg->AsObject();
+            rs.fog.enabled       = BoolOr (fo, "enabled",       rs.fog.enabled);
+            rs.fog.density       = FloatOr(fo, "density",       rs.fog.density);
+            rs.fog.heightStart   = FloatOr(fo, "heightStart",   rs.fog.heightStart);
+            rs.fog.heightFalloff = FloatOr(fo, "heightFalloff", rs.fog.heightFalloff);
+            rs.fog.maxOpacity    = FloatOr(fo, "maxOpacity",    rs.fog.maxOpacity);
+            if (const JValue* cv = Find(fo, "color"); cv && cv->IsArray()) {
+                const auto& arr = cv->AsArray();
+                if (arr.size() >= 3 && arr[0].IsNumber() && arr[1].IsNumber() && arr[2].IsNumber()) {
+                    rs.fog.color[0] = (float)arr[0].AsNumber();
+                    rs.fog.color[1] = (float)arr[1].AsNumber();
+                    rs.fog.color[2] = (float)arr[2].AsNumber();
+                }
+            }
         }
     }
 

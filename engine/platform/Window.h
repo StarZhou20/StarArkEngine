@@ -25,6 +25,12 @@ public:
     bool WasResized() const { return wasResized_; }
     void ResetResizeFlag() { wasResized_ = false; }
 
+    /// Update the OS-level window title (used for runtime FPS display).
+    void SetTitle(const std::string& title);
+
+    /// The title the window was originally constructed with (for FPS prefix).
+    const std::string& GetBaseTitle() const { return baseTitle_; }
+
     GLFWwindow* GetNativeHandle() const { return window_; }
 
 private:
@@ -32,6 +38,7 @@ private:
     int width_;
     int height_;
     bool wasResized_ = false;
+    std::string baseTitle_;
 
     static void FramebufferSizeCallback(GLFWwindow* window, int width, int height);
 };

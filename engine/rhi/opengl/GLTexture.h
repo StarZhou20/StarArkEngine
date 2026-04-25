@@ -15,6 +15,9 @@ public:
 
     void Upload(int width, int height, int channels, const uint8_t* data,
                 TextureFormat format = TextureFormat::sRGB_Auto) override;
+    bool UploadCompressed(int width, int height, CompressedFormat format,
+                          const uint8_t* data, size_t dataSize,
+                          int mipCount) override;
     void Bind(int unit = 0) const override;
     int GetWidth() const override { return width_; }
     int GetHeight() const override { return height_; }

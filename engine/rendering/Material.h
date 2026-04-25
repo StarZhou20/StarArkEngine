@@ -86,8 +86,10 @@ private:
     float shininess_ = 32.0f;
 
     // PBR
+    // Scalars apply only when the corresponding texture is absent. When the
+    // texture *is* present the shader uses the texture channel directly.
     float metallic_ = 0.0f;
-    float roughness_ = 0.5f;
+    float roughness_ = 0.8f;
     float ao_ = 1.0f;
     glm::vec3 emissive_{0.0f};
     bool pbrEnabled_ = false;

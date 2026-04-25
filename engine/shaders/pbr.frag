@@ -87,12 +87,17 @@ uniform float       uPrefilterMaxLod;
 
 // ---------- Shadow (Phase 13, directional light [0] only) ----------
 uniform int       uShadowEnabled;
-uniform sampler2D uShadowMap;
+uniform sampler2DShadow uShadowMap;
 uniform mat4      uLightSpaceMatrix;
 uniform float     uShadowDepthBias;
 uniform float     uShadowNormalBias;
 uniform int       uShadowPcfKernel;
 uniform float     uShadowTexelSize;
+
+// ---------- Debug visualisation (engine-set) ----------
+// 0=off  1=albedo  2=world-normal  3=geom-normal  4=metallic  5=roughness
+// 6=ao  7=mr-raw  8=uv  9=tangent
+uniform int uDebugMode;
 // ---------- PBR functions ----------
 
 // Normal Distribution Function: GGX/Trowbridge-Reitz
@@ -169,29 +174,78 @@ vec3 CalcDirLightPBR(DirLight light, vec3 N, vec3 V, vec3 albedo, float metallic
 
 // PCF shadow sample for the primary directional light. Returns shadow
 // coefficient in [0,1] (0 = fully lit, 1 = fully in shadow).
+// Implementation: hardware 2x2 PCF (sampler2DShadow) + Vogel-disk
+// distribution of N taps with per-pixel rotation. Disk-based sampling
+// has no aligned axis so the residual aliasing has no preferred
+// direction and reads as soft-noise instead of grid-stepped tiers.
+float InterleavedGradientNoise(vec2 p) {
+    // Jorge Jimenez 2014.
+    return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
+}
+
 float SampleDirShadow(vec3 worldPos, vec3 N, vec3 L) {
-    vec4 lightClip = uLightSpaceMatrix * vec4(worldPos, 1.0);
+    // Back-facing to the light = fully shadowed.
+    float NdotL = dot(N, L);
+    if (NdotL <= 0.0) return 1.0;
+
+    // World-space normal bias. Cap the (1-NdotL) factor so grazing pixels
+    // at the seam between two meshes don't get pushed an outsized distance
+    // (which is the cause of "light leaking through cracks").
+    float slope = clamp(1.0 - NdotL, 0.0, 0.5) * 2.0;  // 0..1 but rises slower
+    vec3  biasedPos = worldPos + N * (uShadowNormalBias * slope);
+
+    vec4 lightClip = uLightSpaceMatrix * vec4(biasedPos, 1.0);
     vec3 proj = lightClip.xyz / lightClip.w;
     proj = proj * 0.5 + 0.5;
     if (proj.z > 1.0) return 0.0;
     if (proj.x < 0.0 || proj.x > 1.0 || proj.y < 0.0 || proj.y > 1.0) return 0.0;
 
-    float NdotL = max(dot(N, L), 0.0);
-    float bias  = max(uShadowNormalBias * (1.0 - NdotL), uShadowDepthBias);
-    float currentDepth = proj.z - bias;
+    // Smooth fade near the edges of the shadow map to hide the hard
+    // boundary as the camera moves. Compute distance to the [0,1] frame
+    // and fade shadow toward 0 in the outer ~10% margin.
+    vec2 fadeUV = min(proj.xy, 1.0 - proj.xy);     // 0 at edge, 0.5 at center
+    float edgeFade = smoothstep(0.0, 0.10, min(fadeUV.x, fadeUV.y));
+    // Same idea for far depth: fade out as proj.z approaches 1.
+    float zFade   = 1.0 - smoothstep(0.85, 1.0, proj.z);
+    float fade    = edgeFade * zFade;
+    if (fade <= 0.0) return 0.0;
 
-    int k = uShadowPcfKernel;
+    float currentDepth = proj.z - uShadowDepthBias;
+
+    // Filter radius: scale shadow texel by (kernel + 1). Tight radius keeps
+    // noise low; relying on hw 2x2 PCF + 32 taps for softness.
+    float radiusTex = float(uShadowPcfKernel) + 0.5;
+    vec2  filterR   = vec2(uShadowTexelSize) * radiusTex;
+
+    // 4-rotation dither anchored to 2x2 pixel blocks.
+    // Per-pixel rotation flickers when the camera moves because the noise
+    // is screen-anchored (same world point lands on different fragCoord ->
+    // different rotation -> different shadow value). Using only 4 distinct
+    // angles snapped to a 2x2 block gives enough variation to break the
+    // tap grid alignment, but keeps the rotation stable across small camera
+    // motions (a world point's screen pos has to move > 2 pixels before its
+    // rotation changes).
+    ivec2 cell = ivec2(gl_FragCoord.xy) >> 1;
+    float idx  = float((cell.x ^ cell.y) & 3);              // 0..3
+    float ang  = idx * 1.57079632679;                       // pi/2 steps
+    float cs = cos(ang);
+    float sn = sin(ang);
+
+    // 16-tap Vogel disk (golden angle).
+    const int   N_TAPS = 16;
+    const float GOLDEN = 2.39996323;
     float shadow = 0.0;
-    float samples = 0.0;
-    for (int x = -k; x <= k; ++x) {
-        for (int y = -k; y <= k; ++y) {
-            vec2 off = vec2(x, y) * uShadowTexelSize;
-            float closest = texture(uShadowMap, proj.xy + off).r;
-            shadow += (currentDepth > closest) ? 1.0 : 0.0;
-            samples += 1.0;
-        }
+    for (int i = 0; i < N_TAPS; ++i) {
+        float r = sqrt((float(i) + 0.5) / float(N_TAPS));
+        float a = float(i) * GOLDEN;
+        vec2 off = vec2(cos(a), sin(a)) * r;
+        // Rotate.
+        off = vec2(off.x * cs - off.y * sn, off.x * sn + off.y * cs);
+        off *= filterR;
+        // sampler2DShadow returns 1.0 if depth_ref <= stored, i.e. lit.
+        shadow += 1.0 - texture(uShadowMap, vec3(proj.xy + off, currentDepth));
     }
-    return shadow / max(samples, 1.0);
+    return (shadow / float(N_TAPS)) * fade;
 }
 
 vec3 CalcDirLightPBRShadowed(DirLight light, vec3 N, vec3 V, vec3 albedo,
@@ -236,9 +290,14 @@ void main() {
 
     // Sample albedo (sRGB texture → already linear on sample).
     vec3 albedo = uMaterial.color.rgb;
+    float alpha = uMaterial.color.a;
     if (uMaterial.hasDiffuseTex != 0) {
-        albedo *= texture(uDiffuseTex, vTexCoord).rgb;
+        vec4 diff = texture(uDiffuseTex, vTexCoord);
+        albedo *= diff.rgb;
+        alpha  *= diff.a;
     }
+    // Alpha cutout for foliage / decals (avoids black fringes around leaves).
+    if (alpha < 0.5) discard;
 
     // Resolve surface normal: either from normal map (tangent-space) or geometry.
     vec3 N;
@@ -247,7 +306,12 @@ void main() {
         vec3 B = normalize(vBitangent);
         mat3 TBN = mat3(T, B, N_geom);
 
-        vec3 tangentNormal = texture(uNormalTex, vTexCoord).xyz * 2.0 - 1.0;
+        // Reconstruct Z from XY so this works for both BC5 (RG-only) and BC7
+        // normal maps. Bistro ships BC5 for foliage; reading raw .z gives a
+        // constant that flips the tangent-space normal.
+        vec2 nxy = texture(uNormalTex, vTexCoord).xy * 2.0 - 1.0;
+        float nz = sqrt(max(0.0, 1.0 - dot(nxy, nxy)));
+        vec3 tangentNormal = vec3(nxy, nz);
         N = normalize(TBN * tangentNormal);
     } else {
         N = N_geom;
@@ -255,30 +319,45 @@ void main() {
 
     vec3 V = normalize(uCameraPos - vWorldPos);
 
-    // Metallic / roughness: texture (glTF MR: G=roughness, B=metallic) * scalar.
-    float metallic  = uMaterial.metallic;
-    float roughness = uMaterial.roughness;
+    // Metallic / roughness: when the MR texture is bound, use its channels
+    // directly (not as a multiplier). The scalar defaults are fallbacks only,
+    // so asset-authored values aren't accidentally zeroed out.
+    float metallic;
+    float roughness;
     if (uMaterial.hasMetalRoughTex != 0) {
         vec3 mr = texture(uMetalRoughTex, vTexCoord).rgb;
-        roughness *= mr.g;
-        metallic  *= mr.b;
+        roughness = mr.g;
+        // Bistro's Specular texture often leaves B=0 (no metallic packed).
+        // Fall back to the material scalar so gold/metal stays configurable.
+        metallic = (mr.b < 0.01) ? uMaterial.metallic : mr.b;
+    } else {
+        metallic  = uMaterial.metallic;
+        roughness = uMaterial.roughness;
     }
     roughness = clamp(roughness, 0.04, 1.0);
     metallic  = clamp(metallic, 0.0, 1.0);
 
-    // AO: scalar * texture (R channel, linear).
-    float ao = uMaterial.ao;
+    // AO: direct texture sample when bound, else scalar fallback.
+    // When the AO map is actually the Specular texture's R channel (Bistro
+    // pattern), R may be 0 meaning "no AO packed" — treat that as fully lit
+    // rather than letting it kill all ambient/IBL light.
+    float ao;
     if (uMaterial.hasAOTex != 0) {
-        ao *= texture(uAOTex, vTexCoord).r;
+        float aoSample = texture(uAOTex, vTexCoord).r;
+        ao = (aoSample < 0.01) ? uMaterial.ao : aoSample;
+    } else {
+        ao = uMaterial.ao;
     }
 
     vec3 Lo = vec3(0.0);
 
+    float mainShadow = 0.0;  // shared with IBL block to dim sky-bounce in caves
     for (int i = 0; i < uNumDirLights; ++i) {
         float shadow = 0.0;
         if (i == 0 && uShadowEnabled != 0) {
             vec3 L = normalize(-uDirLights[i].direction);
             shadow = SampleDirShadow(vWorldPos, N, L);
+            mainShadow = shadow;
         }
         Lo += CalcDirLightPBRShadowed(uDirLights[i], N, V, albedo, metallic, roughness, shadow);
     }
@@ -289,7 +368,10 @@ void main() {
         Lo += CalcSpotLightPBR(uSpotLights[i], N, V, vWorldPos, albedo, metallic, roughness);
     }
 
-    Lo *= ao;
+    // NOTE: AO is applied inside each Calc*LightPBR's ambient term, and to the
+    // IBL diffuse/specular below. Do NOT multiply the direct-light accumulation
+    // by AO — doing so makes the scene nearly black when AO textures are dark
+    // (common in outdoor/Bistro-style PBR assets).
 
     // --- IBL ambient (Phase 12) ---
     if (uIBLEnabled != 0) {
@@ -307,6 +389,13 @@ void main() {
         vec2 envBRDF = texture(uBrdfLUT, vec2(max(dot(N, V), 0.0), roughness)).rg;
         vec3 specularIBL = prefiltered * (F * envBRDF.x + envBRDF.y) * uIBLSpecularIntensity;
 
+        // Specular IBL is "sky reflection". In areas the sun can't reach
+        // (caves, archways, recesses) it should be attenuated; otherwise
+        // dark interiors get a bright sky-mirror leak. Multiply by
+        // (1 - mainShadow * 0.85) -> shadowed regions keep ~15% specular
+        // (still some bounce light) but lose the strong sky highlight.
+        specularIBL *= (1.0 - mainShadow * 0.85);
+
         Lo += (kD * diffuseIBL + specularIBL) * ao;
     } else if (uNumDirLights == 0 && uNumPointLights == 0 && uNumSpotLights == 0) {
         Lo = vec3(0.03) * albedo * ao;
@@ -318,7 +407,34 @@ void main() {
     }
     Lo += emissive;
 
+    // ---- Debug visualisation (overrides final color) ----
+    if (uDebugMode != 0) {
+        vec3 dbg = vec3(0.0);
+        if      (uDebugMode == 1) dbg = albedo;
+        else if (uDebugMode == 2) dbg = N * 0.5 + 0.5;
+        else if (uDebugMode == 3) dbg = N_geom * 0.5 + 0.5;
+        else if (uDebugMode == 4) dbg = vec3(metallic);
+        else if (uDebugMode == 5) dbg = vec3(roughness);
+        else if (uDebugMode == 6) dbg = vec3(ao);
+        else if (uDebugMode == 7) dbg = (uMaterial.hasMetalRoughTex != 0)
+                                        ? texture(uMetalRoughTex, vTexCoord).rgb
+                                        : vec3(1.0, 0.0, 1.0);
+        else if (uDebugMode == 8) dbg = vec3(vTexCoord, 0.0);
+        else if (uDebugMode == 9) dbg = normalize(vTangent) * 0.5 + 0.5;
+        else if (uDebugMode == 10) {
+            // Shadow factor: white = lit, black = in shadow.
+            float s = 0.0;
+            if (uShadowEnabled != 0 && uNumDirLights > 0) {
+                vec3 L = normalize(-uDirLights[0].direction);
+                s = SampleDirShadow(vWorldPos, N, L);
+            }
+            dbg = vec3(1.0 - s);
+        }
+        FragColor = vec4(dbg, 1.0);
+        return;
+    }
+
     // Output linear HDR radiance. Exposure and ACES tone mapping are
     // applied by the post-process composite pass (see PostProcess.cpp).
-    FragColor = vec4(Lo, uMaterial.color.a);
+    FragColor = vec4(Lo, alpha);
 }

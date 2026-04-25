@@ -26,12 +26,12 @@ int main(int argc, char** argv) {
     auto& engine = ark::EngineBase::Get();
 
     if (std::strcmp(pick, "cottage") == 0) {
-        engine.Run<CottageScene>(1280, 720, "StarArk Samples — Cottage (v0.1)");
+        engine.Run<CottageScene>(2560, 1440, "StarArk Samples — Cottage (v0.1)");
     } else if (std::strcmp(pick, "demo") == 0) {
-        engine.Run<DemoScene>(1280, 720, "StarArk Samples — PBR Demo");
+        engine.Run<DemoScene>(2560, 1440, "StarArk Samples — PBR Demo");
     } else {
         // Default: Bistro FBX scene
-        engine.Run<FBXDemoScene>(1280, 720, "StarArk Samples — Bistro (FBX)");
+        engine.Run<FBXDemoScene>(2560, 1440, "StarArk Samples — Bistro (FBX)");
     }
     return 0;
 }

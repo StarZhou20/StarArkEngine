@@ -42,7 +42,8 @@ public:
                       const glm::vec3& focusPoint,
                       float orthoHalfSize,
                       float nearPlane,
-                      float farPlane);
+                      float farPlane,
+                      int   resolution = 0);   // 0 = no texel snap
 
     bool IsValid() const { return fbo_ != 0 && depthTex_ != 0; }
 

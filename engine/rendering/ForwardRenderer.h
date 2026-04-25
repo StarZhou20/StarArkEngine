@@ -96,6 +96,15 @@ private:
     bool iblBaked_ = false;
     bool shadowThisFrame_ = false;
 
+    // Cached world-space direction of the main directional light (the one
+    // used for shadow map + contact shadows). Zero vector if none exists.
+    float mainLightDirWorld_[3] = {0.0f, -1.0f, 0.0f};
+    bool  hasMainLight_         = false;
+
+    // TAA: previous-frame view-projection of the primary camera.
+    float prevViewProj_[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    bool  hasPrevViewProj_  = false;
+
     // Pipeline cache: keyed by hash of PipelineDesc fields
     struct PipelineCacheEntry {
         std::unique_ptr<RHIPipeline> pipeline;

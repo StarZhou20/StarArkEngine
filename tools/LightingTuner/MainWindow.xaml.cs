@@ -156,22 +156,62 @@ public partial class MainWindow : Window
 
     private static class Defaults
     {
-        // RenderSettings
-        public const double Exposure = 1.0;
+        // RenderSettings - mirrors RenderSettings.h
+        public const double Exposure = 1.30;
+
         public const bool   BloomEnabled    = true;
         public const double BloomThreshold  = 1.0;
         public const double BloomStrength   = 0.6;
         public const int    BloomIterations = 5;
+
         public const bool   SkyEnabled      = true;
-        public const double SkyIntensity    = 1.0;
+        public const double SkyIntensity    = 0.7;
+
         public const bool   IblEnabled          = true;
-        public const double IblDiffuseIntensity = 1.0;
-        public const double IblSpecularIntensity = 1.0;
+        public const double IblDiffuseIntensity = 0.30;
+        public const double IblSpecularIntensity = 0.55;
+
         public const bool   ShadowEnabled       = true;
-        public const double ShadowOrthoHalfSize = 25.0;
-        public const double ShadowDepthBias     = 0.002;
-        public const double ShadowNormalBias    = 0.010;
-        public const int    ShadowPcfKernel     = 2;
+        public const int    ShadowResolution    = 4096;
+        public const double ShadowOrthoHalfSize = 80.0;
+        public const double ShadowNearPlane     = -120.0;
+        public const double ShadowFarPlane      = 250.0;
+        public const double ShadowDepthBias     = 0.00015;
+        public const double ShadowNormalBias    = 0.04;
+        public const int    ShadowPcfKernel     = 1;
+
+        public const bool   SsaoEnabled   = true;
+        public const double SsaoIntensity = 2.5;
+        public const double SsaoRadius    = 0.20;
+        public const double SsaoBias      = 0.020;
+        public const int    SsaoSamples   = 32;
+
+        public const bool   ContactShadowEnabled  = false;
+        public const int    ContactShadowSteps    = 16;
+        public const double ContactShadowMaxDist  = 0.25;
+        public const double ContactShadowThick    = 0.05;
+        public const double ContactShadowStrength = 0.7;
+
+        public const bool   FxaaEnabled = true;
+
+        public const bool   TaaEnabled  = false;
+        public const double TaaBlendNew = 0.10;
+
+        public const bool   SsrEnabled     = false;
+        public const double SsrMaxDistance = 8.0;
+        public const int    SsrSteps       = 32;
+        public const double SsrThickness   = 0.5;
+        public const double SsrFadeEdge    = 0.1;
+
+        public const int    TonemapMode = 0;   // 0 = ACES, 1 = AgX
+        public const int    MsaaSamples = 4;
+
+        public const bool   FogEnabled       = true;
+        public const double FogDensity       = 0.0010;
+        public const double FogHeightStart   = 0.0;
+        public const double FogHeightFalloff = 0.05;
+        public const double FogMaxOpacity    = 0.10;
+        public static readonly double[] FogColor = { 0.70, 0.74, 0.78 };
 
         // Light (per Light.h)
         public const double LightIntensity = 1.0;
@@ -217,10 +257,63 @@ public partial class MainWindow : Window
         var shadow = GetOrCreateObject(rs, "shadow");
         stack.Children.Add(Group("Shadow 阴影",
             BoolRow("enabled 启用", shadow, "enabled", Defaults.ShadowEnabled),
-            SliderRow("orthoHalfSize 正交半尺寸", shadow, "orthoHalfSize", 1, 200, 0.5, Defaults.ShadowOrthoHalfSize),
-            SliderRow("depthBias 深度偏移",       shadow, "depthBias",  0, 0.02, 0.0001, Defaults.ShadowDepthBias),
-            SliderRow("normalBias 法线偏移",      shadow, "normalBias", 0, 0.05, 0.0001, Defaults.ShadowNormalBias),
-            SliderRow("pcfKernel PCF 核",         shadow, "pcfKernel",  0, 5, 1, Defaults.ShadowPcfKernel)));
+            SliderRow("resolution 分辨率",        shadow, "resolution",    256, 8192, 256, Defaults.ShadowResolution),
+            SliderRow("orthoHalfSize 正交半尺寸", shadow, "orthoHalfSize", 1,   500,  0.5,  Defaults.ShadowOrthoHalfSize),
+            SliderRow("nearPlane 近平面",         shadow, "nearPlane",    -500, 0,    1,    Defaults.ShadowNearPlane),
+            SliderRow("farPlane 远平面",          shadow, "farPlane",      0,   1000, 1,    Defaults.ShadowFarPlane),
+            SliderRow("depthBias 深度偏移",       shadow, "depthBias",     0,   0.005,0.00001, Defaults.ShadowDepthBias),
+            SliderRow("normalBias 法线偏移",      shadow, "normalBias",    0,   0.5,  0.001,Defaults.ShadowNormalBias),
+            SliderRow("pcfKernel PCF 核",         shadow, "pcfKernel",     0,   5,    1,    Defaults.ShadowPcfKernel)));
+
+        var ssao = GetOrCreateObject(rs, "ssao");
+        stack.Children.Add(Group("SSAO 屏幕空间环境光遮蔽",
+            BoolRow("enabled 启用", ssao, "enabled", Defaults.SsaoEnabled),
+            SliderRow("intensity 强度", ssao, "intensity", 0, 5,    0.05, Defaults.SsaoIntensity),
+            SliderRow("radius 半径",    ssao, "radius",    0, 2,    0.01, Defaults.SsaoRadius),
+            SliderRow("bias 偏置",      ssao, "bias",      0, 0.1,  0.001,Defaults.SsaoBias),
+            SliderRow("samples 样本数", ssao, "samples",   4, 64,   1,    Defaults.SsaoSamples)));
+
+        var contact = GetOrCreateObject(rs, "contactShadow");
+        stack.Children.Add(Group("Contact Shadow 接触阴影",
+            BoolRow("enabled 启用", contact, "enabled", Defaults.ContactShadowEnabled),
+            SliderRow("steps 步数",        contact, "steps",       4, 64,   1,    Defaults.ContactShadowSteps),
+            SliderRow("maxDistance 最远距离", contact, "maxDistance", 0, 2,    0.01, Defaults.ContactShadowMaxDist),
+            SliderRow("thickness 厚度",     contact, "thickness",   0, 1,    0.01, Defaults.ContactShadowThick),
+            SliderRow("strength 强度",      contact, "strength",    0, 1,    0.01, Defaults.ContactShadowStrength)));
+
+        var ssr = GetOrCreateObject(rs, "ssr");
+        stack.Children.Add(Group("SSR 屏幕空间反射",
+            BoolRow("enabled 启用", ssr, "enabled", Defaults.SsrEnabled),
+            SliderRow("maxDistance 最远距离", ssr, "maxDistance", 0, 50,  0.5,  Defaults.SsrMaxDistance),
+            SliderRow("steps 步数",         ssr, "steps",       4, 128, 1,    Defaults.SsrSteps),
+            SliderRow("thickness 厚度",     ssr, "thickness",   0, 5,    0.01, Defaults.SsrThickness),
+            SliderRow("fadeEdge 边缘淡出",   ssr, "fadeEdge",    0, 0.5,  0.01, Defaults.SsrFadeEdge)));
+
+        var fxaa = GetOrCreateObject(rs, "fxaa");
+        stack.Children.Add(Group("FXAA 抗锯齿",
+            BoolRow("enabled 启用", fxaa, "enabled", Defaults.FxaaEnabled)));
+
+        var taa = GetOrCreateObject(rs, "taa");
+        stack.Children.Add(Group("TAA 时域抗锯齿",
+            BoolRow("enabled 启用", taa, "enabled", Defaults.TaaEnabled),
+            SliderRow("blendNew 新帧混合", taa, "blendNew", 0.02, 0.5, 0.01, Defaults.TaaBlendNew)));
+
+        var tonemap = GetOrCreateObject(rs, "tonemap");
+        stack.Children.Add(Group("Tonemap 色调映射",
+            SliderRow("mode (0=ACES, 1=AgX)", tonemap, "mode", 0, 1, 1, Defaults.TonemapMode)));
+
+        var msaa = GetOrCreateObject(rs, "msaa");
+        stack.Children.Add(Group("MSAA 多重采样",
+            SliderRow("samples (0/1=off, 2/4/8)", msaa, "samples", 0, 8, 1, Defaults.MsaaSamples)));
+
+        var fog = GetOrCreateObject(rs, "fog");
+        stack.Children.Add(Group("Fog 雾",
+            BoolRow("enabled 启用", fog, "enabled", Defaults.FogEnabled),
+            SliderRow("density 密度",         fog, "density",       0, 0.05, 0.0001, Defaults.FogDensity),
+            SliderRow("heightStart 起始高度",  fog, "heightStart",  -100, 100, 0.5, Defaults.FogHeightStart),
+            SliderRow("heightFalloff 高度衰减", fog, "heightFalloff", 0,    1,   0.001, Defaults.FogHeightFalloff),
+            SliderRow("maxOpacity 最大不透明度", fog, "maxOpacity",  0,    1,   0.01,  Defaults.FogMaxOpacity),
+            ColorRow("color 颜色", GetOrCreateVec3(fog, "color", 0.70, 0.74, 0.78), Defaults.FogColor)));
 
         return sv;
     }

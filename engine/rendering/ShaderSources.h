@@ -448,22 +448,47 @@ void main() {
 
     vec3 V = normalize(uCameraPos - vWorldPos);
 
-    // Metallic / roughness: either from texture (glTF MR: G=roughness, B=metallic)
-    // or scalar uniforms. Scalar values act as multipliers when a texture is bound.
-    float metallic  = uMaterial.metallic;
-    float roughness = uMaterial.roughness;
+    // Metallic / roughness: prefer texture channels when bound (glTF/MR
+    // convention: G=roughness, B=metallic). Fall back to scalar uniforms
+    // otherwise. Using the texture directly (not as a multiplier) ensures
+    // scalar defaults can't accidentally force everything non-metallic.
+    float metallic;
+    float roughness;
     if (uMaterial.hasMetalRoughTex != 0) {
         vec3 mr = texture(uMetalRoughTex, vTexCoord).rgb;
-        roughness *= mr.g;
-        metallic  *= mr.b;
+        roughness = mr.g;
+        metallic  = mr.b;
+    } else {
+        metallic  = uMaterial.metallic;
+        roughness = uMaterial.roughness;
     }
     roughness = clamp(roughness, 0.04, 1.0);
     metallic  = clamp(metallic, 0.0, 1.0);
 
-    // AO: scalar * texture (R channel, linear).
-    float ao = uMaterial.ao;
+    // Specular anti-aliasing (Tokuyoshi & Kaplanyan-style geometric variance).
+    // Surfaces with rapidly changing normals (relative to a pixel) produce
+    // sub-pixel specular sparkle that no AA pass can resolve. We widen the
+    // effective roughness based on the screen-space derivative of the
+    // resolved normal — the rougher the apparent micro-geometry, the larger
+    // the specular lobe, killing crawl on motion at near-zero cost.
+    {
+        vec3 dNdx = dFdx(N);
+        vec3 dNdy = dFdy(N);
+        // Wider clamp + larger gain reduces specular crawl on tiled normal
+        // maps (cobblestones, tiles, foliage) at the cost of slightly
+        // softer highlights up close. 0.5 / *4 was tuned for the Bistro set.
+        float kernelRoughness = min(0.5, 4.0 * (dot(dNdx, dNdx) + dot(dNdy, dNdy)));
+        float a = roughness * roughness;
+        a = sqrt(min(1.0, a + kernelRoughness));
+        roughness = a;
+    }
+
+    // AO: scalar when no texture, else direct texture sample (R channel, linear).
+    float ao;
     if (uMaterial.hasAOTex != 0) {
-        ao *= texture(uAOTex, vTexCoord).r;
+        ao = texture(uAOTex, vTexCoord).r;
+    } else {
+        ao = uMaterial.ao;
     }
 
     vec3 Lo = vec3(0.0);
@@ -483,13 +508,13 @@ void main() {
         Lo += CalcSpotLightPBR(uSpotLights[i], N, V, vWorldPos, albedo, metallic, roughness);
     }
 
-    // Apply AO to the full direct-light accumulation as a cheap approximation
-    // (true AO only affects ambient/indirect; will be refined once IBL lands).
-    Lo *= ao;
+    // NOTE: AO is already applied to the ambient term inside CalcDirLightPBR.
+    // Don't multiply direct lighting by AO — that would zero the scene out when
+    // an asset's packed AO channel is dark (as is common for Bistro materials).
 
     // fallback ambient if no lights
     if (uNumDirLights == 0 && uNumPointLights == 0 && uNumSpotLights == 0) {
-        Lo = vec3(0.03) * albedo * ao;
+        Lo = vec3(0.2) * albedo * ao;
     }
 
     // Emissive: scalar + texture (sRGB → linear on sample).

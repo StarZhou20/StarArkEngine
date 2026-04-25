@@ -13,6 +13,10 @@
 #include <GL/glew.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <cstdlib>
+#include <cstring>
+#include <cmath>
+#include <string>
 #include <glm/trigonometric.hpp>
 #include <algorithm>
 #include <string>
@@ -55,17 +59,49 @@ bool ForwardRenderer::RenderShadowPass() {
         lightDir = -glm::normalize(glm::vec3(worldMat[2]));
         break;
     }
-    if (!dirLight) return false;
+    if (!dirLight) { hasMainLight_ = false; return false; }
+
+    // Cache for later passes (contact shadows, etc.).
+    mainLightDirWorld_[0] = lightDir.x;
+    mainLightDirWorld_[1] = lightDir.y;
+    mainLightDirWorld_[2] = lightDir.z;
+    hasMainLight_ = true;
 
     if (!shadowMap_->Init(settings_.shadow.resolution)) return false;
 
-    // Focus the light frustum on the origin (good enough for a single-room scene).
-    // Phase 13.x will snap this to the active camera to cover large worlds.
+    // --- Pick focus point: snap to camera ground projection ----------------
+    // Bistro and similar large scenes can't be covered by a fixed frustum
+    // at the world origin. Center the ortho frustum on the active camera
+    // (projected onto the ground), pushed slightly forward along view.
     glm::vec3 focus(0.0f);
+    {
+        Camera* primaryForShadow = nullptr;
+        for (auto* cam : Camera::GetAllCameras()) {
+            auto* owner = cam->GetOwner();
+            if (!owner || owner->IsDestroyed() || !owner->IsActiveInHierarchy() || !cam->IsEnabled())
+                continue;
+            primaryForShadow = cam;
+            break;
+        }
+        if (primaryForShadow) {
+            const glm::mat4 invView = glm::inverse(primaryForShadow->GetViewMatrix());
+            glm::vec3 camPos = glm::vec3(invView[3]);
+            glm::vec3 fwd = -glm::normalize(glm::vec3(invView[2]));
+            fwd.y = 0.0f;
+            if (glm::dot(fwd, fwd) < 1e-4f) fwd = glm::vec3(0, 0, -1);
+            else                            fwd = glm::normalize(fwd);
+            focus = glm::vec3(camPos.x, 0.0f, camPos.z) +
+                    fwd * (settings_.shadow.orthoHalfSize * 0.25f);
+        }
+    }
+
+    // Texel-snap is now performed inside ShadowMap::UpdateMatrix using its
+    // own light-space basis (passing resolution > 0 enables it).
     shadowMap_->UpdateMatrix(lightDir, focus,
                              settings_.shadow.orthoHalfSize,
                              settings_.shadow.nearPlane,
-                             settings_.shadow.farPlane);
+                             settings_.shadow.farPlane,
+                             settings_.shadow.resolution);
 
     auto depthShader = shaderManager_->Get("depth");
     if (!depthShader) return false;
@@ -159,6 +195,7 @@ void ForwardRenderer::RenderFrame(Window* window) {
     const int sw = window->GetWidth();
     const int sh = window->GetHeight();
     postProcess_->SetBloomEnabled(settings_.bloom.enabled);
+    postProcess_->SetMsaaSamples(settings_.msaa.samples);
 
     // --- Phase 12: ensure IBL is baked once the skybox is ready ---
     if (!iblBaked_ && skybox_ && skybox_->IsEnabled()) {
@@ -170,6 +207,24 @@ void ForwardRenderer::RenderFrame(Window* window) {
     // --- Phase 13: directional shadow depth pass (before main scene) ---
     shadowThisFrame_ = RenderShadowPass();
 
+    // If shadow pass was disabled/skipped, we still need the main light dir
+    // for contact shadows. Do a cheap scan.
+    if (!hasMainLight_) {
+        for (auto* light : Light::GetAllLights()) {
+            auto* owner = light->GetOwner();
+            if (!owner || owner->IsDestroyed() || !owner->IsActiveInHierarchy() || !light->IsEnabled())
+                continue;
+            if (light->GetType() != Light::Type::Directional) continue;
+            glm::mat4 worldMat = const_cast<Transform&>(owner->GetTransform()).GetWorldMatrix();
+            glm::vec3 dir = -glm::normalize(glm::vec3(worldMat[2]));
+            mainLightDirWorld_[0] = dir.x;
+            mainLightDirWorld_[1] = dir.y;
+            mainLightDirWorld_[2] = dir.z;
+            hasMainLight_ = true;
+            break;
+        }
+    }
+
     postProcess_->BeginScene(sw, sh);
 
     for (auto* cam : validCameras) {
@@ -177,10 +232,110 @@ void ForwardRenderer::RenderFrame(Window* window) {
     }
 
     postProcess_->EndScene();
+
+    // --- Phase 14: SSAO (uses primary camera's projection) ---
+    bool ssaoOn    = settings_.ssao.enabled          && std::getenv("ARK_NO_SSAO")    == nullptr;
+    bool contactOn = settings_.contactShadow.enabled && std::getenv("ARK_NO_CONTACT") == nullptr;
+    if (ssaoOn && !validCameras.empty()) {
+        glm::mat4 proj = validCameras.front()->GetProjectionMatrix();
+        postProcess_->ApplySSAO(glm::value_ptr(proj),
+                                settings_.ssao.intensity,
+                                settings_.ssao.radius,
+                                settings_.ssao.bias,
+                                settings_.ssao.samples);
+    }
+
+    // --- Phase 15: Contact shadows (screen-space ray-march toward main light) ---
+    if (contactOn && hasMainLight_ && !validCameras.empty()) {        Camera* primary = validCameras.front();
+        glm::mat4 proj  = primary->GetProjectionMatrix();
+        glm::mat4 view  = primary->GetViewMatrix();
+
+        // World-space direction TOWARD the light = -mainLightDir (we stored
+        // the direction the light's rays travel).
+        glm::vec3 worldToLight = -glm::vec3(mainLightDirWorld_[0],
+                                            mainLightDirWorld_[1],
+                                            mainLightDirWorld_[2]);
+        // Transform as direction (ignore translation).
+        glm::vec3 viewToLight = glm::normalize(glm::vec3(view * glm::vec4(worldToLight, 0.0f)));
+
+        float viewDirArr[3] = { viewToLight.x, viewToLight.y, viewToLight.z };
+        postProcess_->ApplyContactShadow(glm::value_ptr(proj),
+                                         viewDirArr,
+                                         settings_.contactShadow.steps,
+                                         settings_.contactShadow.maxDistance,
+                                         settings_.contactShadow.thickness,
+                                         settings_.contactShadow.strength);
+    }
+
+    // --- Phase 16: SSR (depth-only, upward-facing surfaces) ---
+    if (settings_.ssr.enabled && !validCameras.empty()) {
+        glm::mat4 proj    = validCameras.front()->GetProjectionMatrix();
+        glm::mat4 invProj = glm::inverse(proj);
+        postProcess_->ApplySSR(glm::value_ptr(proj),
+                               glm::value_ptr(invProj),
+                               1.0f,
+                               settings_.ssr.maxDistance,
+                               settings_.ssr.steps,
+                               settings_.ssr.thickness,
+                               settings_.ssr.fadeEdge);
+    }
+
+    // --- Phase 16: height fog uses primary camera matrices ---
+    if (!validCameras.empty()) {
+        Camera*   primary = validCameras.front();
+        glm::mat4 proj    = primary->GetProjectionMatrix();
+        glm::mat4 view    = primary->GetViewMatrix();
+        glm::mat4 invVP   = glm::inverse(proj * view);
+        // Camera world position = -inverseView * (translation column).
+        glm::mat4 invView = glm::inverse(view);
+        glm::vec3 camPos  = glm::vec3(invView[3]);
+        float camPosArr[3] = { camPos.x, camPos.y, camPos.z };
+        postProcess_->SetFog(settings_.fog.enabled,
+                             glm::value_ptr(invVP),
+                             camPosArr,
+                             settings_.fog.color,
+                             settings_.fog.density,
+                             settings_.fog.heightStart,
+                             settings_.fog.heightFalloff,
+                             settings_.fog.maxOpacity);
+    } else {
+        postProcess_->SetFog(false, nullptr, nullptr, nullptr, 0, 0, 0, 0);
+    }
+
+    // --- Phase 16: TAA needs prev-frame view-projection + cur inv-VP ---
+    glm::mat4 curViewProjForTAA(1.0f);
+    glm::mat4 curInvViewProjForTAA(1.0f);
+    bool taaInputsValid = false;
+    if (settings_.taa.enabled && !validCameras.empty()) {
+        Camera*   primary = validCameras.front();
+        glm::mat4 proj    = primary->GetProjectionMatrix();
+        glm::mat4 view    = primary->GetViewMatrix();
+        curViewProjForTAA    = proj * view;
+        curInvViewProjForTAA = glm::inverse(curViewProjForTAA);
+        taaInputsValid = true;
+    }
+
     postProcess_->Apply(sw, sh, settings_.exposure,
                        settings_.bloom.threshold,
                        settings_.bloom.enabled ? settings_.bloom.strength : 0.0f,
-                       settings_.bloom.iterations);
+                       settings_.bloom.iterations,
+                       ssaoOn,
+                       contactOn,
+                       settings_.fxaa.enabled,
+                       settings_.tonemap.mode,
+                       settings_.ssr.enabled,
+                       settings_.taa.enabled && taaInputsValid,
+                       settings_.taa.blendNew,
+                       hasPrevViewProj_ ? prevViewProj_ : glm::value_ptr(curViewProjForTAA),
+                       glm::value_ptr(curInvViewProjForTAA));
+
+    // Update prev VP for next frame.
+    if (taaInputsValid) {
+        std::memcpy(prevViewProj_, glm::value_ptr(curViewProjForTAA), sizeof(prevViewProj_));
+        hasPrevViewProj_ = true;
+    } else {
+        hasPrevViewProj_ = false;
+    }
 }
 
 void ForwardRenderer::RenderCamera(Camera* camera, Window* window) {
@@ -340,6 +495,25 @@ void ForwardRenderer::SetLightUniforms(RHIShader* shader, Camera* camera) {
         glBindTexture(GL_TEXTURE_2D, shadowMap_->GetDepthTexture());
         glActiveTexture(GL_TEXTURE0);
     }
+
+    // --- Debug visualisation (env: ARK_DEBUG = off|albedo|normal|geom|metal|
+    //     rough|ao|mr|uv|tangent, or numeric 0-9) ---
+    static int debugMode = []() {
+        const char* env = std::getenv("ARK_DEBUG");
+        if (!env) return 0;
+        std::string v(env);
+        if (v == "albedo")  return 1;
+        if (v == "normal")  return 2;
+        if (v == "geom")    return 3;
+        if (v == "metal")   return 4;
+        if (v == "rough")   return 5;
+        if (v == "ao")      return 6;
+        if (v == "mr")      return 7;
+        if (v == "uv")      return 8;
+        if (v == "tangent") return 9;
+        try { return std::stoi(v); } catch (...) { return 0; }
+    }();
+    shader->SetUniformInt("uDebugMode", debugMode);
 }
 
 void ForwardRenderer::DrawMeshRenderer(MeshRenderer* renderer, Camera* camera) {
