@@ -1,0 +1,7 @@
+{
+  "RuntimeExecutable": "StarArkSamples.exe",
+  "ModsDirectory": "mods",
+  "GameTitle": "StarArk — Sample Game",
+  "DefaultPipeline": "forward",
+  "AllowDeferred": true
+}

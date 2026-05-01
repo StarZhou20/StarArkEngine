@@ -90,3 +90,46 @@ if(STARARK_ENABLE_SCRIPTING)
             "$<TARGET_FILE_DIR:StarArkSamples>/mods/hellomod/scripts/HelloMod.dll"
     )
 endif()
+
+# ---------------------------------------------------------------------------
+# v0.3 ModSpec — StarArkLauncher (.NET 10 WPF) deployment.
+# Builds tools/Launcher/ via `dotnet publish`, then copies the entire
+# self-contained-ish output next to StarArkSamples.exe so launching from
+# build/samples/ works end-to-end (StarArkLauncher.exe sits beside
+# StarArkSamples.exe and scans ./mods).
+# ---------------------------------------------------------------------------
+set(_launcher_proj   "${CMAKE_SOURCE_DIR}/tools/Launcher/Launcher.csproj")
+set(_launcher_outdir "${CMAKE_BINARY_DIR}/launcher-publish")
+set(_launcher_marker "${_launcher_outdir}/StarArkLauncher.exe")
+
+add_custom_command(
+    OUTPUT  "${_launcher_marker}"
+    COMMAND dotnet publish "${_launcher_proj}"
+            -c Release
+            -o "${_launcher_outdir}"
+            --nologo
+    DEPENDS "${_launcher_proj}"
+            "${CMAKE_SOURCE_DIR}/tools/Launcher/MainWindow.xaml"
+            "${CMAKE_SOURCE_DIR}/tools/Launcher/MainWindow.xaml.cs"
+            "${CMAKE_SOURCE_DIR}/tools/Launcher/Themes/Dark.xaml"
+            "${CMAKE_SOURCE_DIR}/tools/Launcher/Services/LaunchService.cs"
+            "${CMAKE_SOURCE_DIR}/tools/Launcher/Services/ModScanner.cs"
+            "${CMAKE_SOURCE_DIR}/tools/Launcher/Services/Validator.cs"
+            "${CMAKE_SOURCE_DIR}/tools/Launcher/Models/ModInfo.cs"
+            "${CMAKE_SOURCE_DIR}/tools/Launcher/Models/LauncherConfig.cs"
+            "${CMAKE_SOURCE_DIR}/tools/Launcher/ViewModels/MainViewModel.cs"
+    VERBATIM
+    COMMENT "Building StarArkLauncher (.NET 10 WPF)"
+)
+add_custom_target(StarArkLauncher_Publish ALL DEPENDS "${_launcher_marker}")
+add_dependencies(StarArkSamples StarArkLauncher_Publish)
+
+add_custom_command(TARGET StarArkSamples POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${_launcher_outdir}"
+        "$<TARGET_FILE_DIR:StarArkSamples>"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/launcher.config.json"
+        "$<TARGET_FILE_DIR:StarArkSamples>/launcher.config.json"
+    COMMENT "Deploying StarArkLauncher next to StarArkSamples.exe"
+)

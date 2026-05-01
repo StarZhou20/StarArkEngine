@@ -8,6 +8,7 @@
 #include "engine/rendering/Skybox.h"
 #include "engine/rendering/IBL.h"
 #include "engine/rendering/ShadowMap.h"
+#include "engine/rendering/DeferredRenderer.h"
 #include "engine/rendering/RenderSettings.h"
 #include <memory>
 #include <unordered_map>
@@ -72,6 +73,14 @@ public:
     void  SetBloomIterations(int n)       { settings_.bloom.iterations = n; }
     int   GetBloomIterations() const      { return settings_.bloom.iterations; }
 
+    /// Stage F (deferred): render transparent renderers (back-to-front)
+    /// into the supplied render target using the standard forward `pbr`
+    /// shading path (full shadow + IBL light setup). Caller is expected
+    /// to have copied the opaque scene depth into `targetRT` so depth
+    /// testing works correctly. Used by the deferred dispatch after the
+    /// G-buffer/lighting pass and before PostProcess composite.
+    void RenderTransparentOverlay(Camera* camera, RHIRenderTarget* targetRT);
+
 private:
     void RenderCamera(Camera* camera, Window* window);
     void SetLightUniforms(RHIShader* shader, Camera* camera);
@@ -91,6 +100,10 @@ private:
     std::unique_ptr<Skybox>        skybox_;
     std::unique_ptr<IBL>           ibl_;
     std::unique_ptr<ShadowMap>     shadowMap_;
+    /// Deferred sub-renderer (Roadmap #9). Lazily created on the first
+    /// frame `settings_.pipeline == Deferred`. Owned here so that
+    /// EngineBase keeps its single `renderer_` handle.
+    std::unique_ptr<DeferredRenderer> deferredRenderer_;
 
     RenderSettings settings_;
     bool iblBaked_ = false;

@@ -1,5 +1,6 @@
 #include "ForwardRenderer.h"
 #include "Camera.h"
+#include "DrawListBuilder.h"
 #include "Light.h"
 #include "MeshRenderer.h"
 #include "Material.h"
@@ -7,7 +8,10 @@
 #include "SceneSerializer.h"
 #include "engine/core/AObject.h"
 #include "engine/core/Transform.h"
+#include "engine/debug/DebugListenBus.h"
 #include "engine/platform/Window.h"
+#include "engine/platform/Paths.h"
+#include "engine/mod/ModInfo.h"
 #include "engine/rhi/RHIShader.h"
 
 #include <GL/glew.h>
@@ -21,6 +25,9 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+#include <fstream>
+#include <sstream>
+#include <filesystem>
 
 namespace ark {
 
@@ -33,6 +40,74 @@ ForwardRenderer::ForwardRenderer(RHIDevice* device)
     , ibl_(std::make_unique<IBL>())
     , shadowMap_(std::make_unique<ShadowMap>())
 {
+    // Wire RHI device into PostProcess so its lazy AllocTargets() can route
+    // through `RHIRenderTarget` instead of raw glGenFramebuffers/Textures.
+    postProcess_->SetDevice(device_);
+    // IBL routes only the BrdfLUT 2D bake through the RHI for now;
+    // cubemap face/mip attach bakes still use raw GL.
+    ibl_->SetDevice(device_);
+
+    // Stage G: pipeline selector. Order of precedence:
+    //   1. ARK_PIPELINE env (debug override, highest priority)
+    //   2. <GameRoot>/game.config.json   "pipeline": "deferred" | "forward"
+    //   3. RenderSettings::pipeline default = Forward
+    // The JSON read uses a tiny substring scan rather than the full parser
+    // in SceneSerializer.cpp — this runs once at ctor and we only care
+    // about a single string key.
+    auto applyPipelineString = [this](const std::string& v, const char* origin) {
+        if (v == "deferred" || v == "Deferred" || v == "DEFERRED") {
+            settings_.pipeline = RenderPipeline::Deferred;
+            ARK_LOG_INFO("Render", std::string("pipeline=deferred (") + origin + ") \u2014 using DeferredRenderer");
+        } else if (v == "forward" || v == "Forward" || v == "FORWARD") {
+            settings_.pipeline = RenderPipeline::Forward;
+        }
+    };
+    {
+        namespace fs = std::filesystem;
+        fs::path cfg = Paths::GameRoot() / "game.config.json";
+        std::ifstream in(cfg);
+        if (in) {
+            std::stringstream buf; buf << in.rdbuf();
+            std::string body = buf.str();
+            // Find `"pipeline"` then the first quoted string after the colon.
+            auto k = body.find("\"pipeline\"");
+            if (k != std::string::npos) {
+                auto colon = body.find(':', k);
+                if (colon != std::string::npos) {
+                    auto q1 = body.find('"', colon + 1);
+                    auto q2 = (q1 == std::string::npos) ? std::string::npos
+                                                        : body.find('"', q1 + 1);
+                    if (q1 != std::string::npos && q2 != std::string::npos) {
+                        applyPipelineString(body.substr(q1 + 1, q2 - q1 - 1),
+                                            "game.config.json");
+                    }
+                }
+            }
+        }
+    }
+    if (const char* env = std::getenv("ARK_PIPELINE")) {
+        applyPipelineString(env, "ARK_PIPELINE env");
+    }
+
+    // v0.3 ModSpec §2 — once the pipeline is known, warn (don't skip) on any
+    // enabled mod whose `supported_pipelines` list does not include the
+    // current pipeline. We don't disable the mod here because the pipeline
+    // is a runtime debug-overridable choice; the player owns the trade-off.
+    {
+        const char* pipName =
+            (settings_.pipeline == RenderPipeline::Deferred) ? "deferred" : "forward";
+        for (const auto& id : Paths::EnabledModIds()) {
+            const ModInfo* info = Paths::FindModInfo(id);
+            if (!info || info->supported_pipelines.empty()) continue;
+            bool ok = false;
+            for (const auto& p : info->supported_pipelines) if (p == pipName) { ok = true; break; }
+            if (!ok) {
+                ARK_LOG_WARN("Render",
+                    "Mod '" + id + "' supported_pipelines does not include '"
+                    + pipName + "' — visual artifacts possible.");
+            }
+        }
+    }
 }
 
 void ForwardRenderer::RebakeIBL() {
@@ -67,7 +142,7 @@ bool ForwardRenderer::RenderShadowPass() {
     mainLightDirWorld_[2] = lightDir.z;
     hasMainLight_ = true;
 
-    if (!shadowMap_->Init(settings_.shadow.resolution)) return false;
+    if (!shadowMap_->Init(device_, settings_.shadow.resolution)) return false;
 
     // --- Pick focus point: snap to camera ground projection ----------------
     // Bistro and similar large scenes can't be covered by a fixed frustum
@@ -168,6 +243,14 @@ bool ForwardRenderer::RenderShadowPass() {
 }
 
 void ForwardRenderer::RenderFrame(Window* window) {
+    // Skip the entire frame when the window framebuffer has zero extent
+    // (initial frame on some drivers, or window minimized). Touching FBO
+    // creation / glm::perspective with width=0 or height=0 yields hard
+    // GL errors and a glm aspect-ratio assert that aborts the process.
+    if (!window || window->GetWidth() <= 0 || window->GetHeight() <= 0) {
+        return;
+    }
+
     // Poll for shader file changes (no-op when hot reload is off).
     shaderManager_->CheckHotReload();
 
@@ -191,21 +274,145 @@ void ForwardRenderer::RenderFrame(Window* window) {
     std::sort(validCameras.begin(), validCameras.end(),
         [](const Camera* a, const Camera* b) { return a->GetPriority() < b->GetPriority(); });
 
-    // --- Phase 10: bind HDR FBO for the entire scene, then composite ---
-    const int sw = window->GetWidth();
-    const int sh = window->GetHeight();
-    postProcess_->SetBloomEnabled(settings_.bloom.enabled);
-    postProcess_->SetMsaaSamples(settings_.msaa.samples);
-
-    // --- Phase 12: ensure IBL is baked once the skybox is ready ---
+    // --- Phase 12: ensure IBL is baked once the skybox is ready --------
+    // (Hoisted above the deferred dispatch so DeferredRenderer can sample
+    // the IBL textures in its lighting pass.)
     if (!iblBaked_ && skybox_ && skybox_->IsEnabled()) {
         skybox_->Init();
         ibl_->Bake(skybox_->GetCubeMap());
         iblBaked_ = ibl_->IsValid();
     }
 
-    // --- Phase 13: directional shadow depth pass (before main scene) ---
+    // --- Phase 13: directional shadow depth pass ------------------------
+    // (Hoisted above the deferred dispatch so DeferredRenderer can sample
+    // the shadow map. ForwardRenderer's main path also re-uses the same
+    // result — RenderShadowPass writes into shadowMap_ + sets
+    // mainLightDirWorld_ regardless of which pipeline runs after.)
     shadowThisFrame_ = RenderShadowPass();
+
+    // --- Roadmap #9: Deferred dispatch -----------------------------------
+    // When the pipeline is set to Deferred, route the primary camera
+    // through DeferredRenderer. Shadow + IBL state is already populated
+    // above; we forward it via SetFrameContext. If the deferred path
+    // fails (e.g. shader load), fall through to forward.
+    if (settings_.pipeline == RenderPipeline::Deferred) {
+        if (!deferredRenderer_) {
+            deferredRenderer_ = std::make_unique<DeferredRenderer>(device_, shaderManager_.get());
+        }
+        deferredRenderer_->SetFrameContext(&settings_,
+                                           shadowMap_.get(), shadowThisFrame_,
+                                           ibl_.get(),       iblBaked_);
+        const int dsw = window->GetWidth();
+        const int dsh = window->GetHeight();
+        if (deferredRenderer_->Render(validCameras.front(), dsw, dsh)) {
+            // Stage F: forward transparent overlay. Copy gbuffer depth
+            // into lit_, then render IsTransparent() meshes back-to-front
+            // with the standard PBR shader (full shadow + IBL).
+            deferredRenderer_->BlitGBufferDepthToLit();
+            RenderTransparentOverlay(validCameras.front(),
+                                     deferredRenderer_->GetLitTarget());
+
+            // Stage E/G: feed lit_ (linear HDR) + gbuffer depth into
+            // PostProcess. With shared depth, SSAO/Fog/SSR/contactShadow
+            // run on the deferred path too. TAA still off (needs prev VP +
+            // motion vectors; emissive RT alpha is the natural slot for
+            // motion later).
+            auto* lit = deferredRenderer_->GetLitTarget();
+            auto* gb  = deferredRenderer_->GetGBuffer();
+            if (lit && gb) {
+                Camera*   primary = validCameras.front();
+                glm::mat4 proj    = primary->GetProjectionMatrix();
+                glm::mat4 view    = primary->GetViewMatrix();
+                glm::mat4 invProj = glm::inverse(proj);
+                glm::mat4 invVP   = glm::inverse(proj * view);
+                glm::mat4 invView = glm::inverse(view);
+                glm::vec3 camPos  = glm::vec3(invView[3]);
+                float camPosArr[3] = { camPos.x, camPos.y, camPos.z };
+                postProcess_->SetFog(settings_.fog.enabled,
+                                     glm::value_ptr(invVP),
+                                     camPosArr,
+                                     settings_.fog.color,
+                                     settings_.fog.density,
+                                     settings_.fog.heightStart,
+                                     settings_.fog.heightFalloff,
+                                     settings_.fog.maxOpacity);
+
+                bool ssaoOn = settings_.ssao.enabled &&
+                              std::getenv("ARK_NO_SSAO") == nullptr;
+
+                postProcess_->SetBloomEnabled(settings_.bloom.enabled);
+                postProcess_->SetMsaaSamples(0);  // lit_ is already resolved
+                postProcess_->IngestHDRColor(lit->GetColorTextureHandle(0), dsw, dsh,
+                                             gb->GetDepthTextureHandle());
+                if (ssaoOn) {
+                    postProcess_->ApplySSAO(glm::value_ptr(proj),
+                                            settings_.ssao.intensity,
+                                            settings_.ssao.radius,
+                                            settings_.ssao.bias,
+                                            settings_.ssao.samples);
+                }
+                if (settings_.contactShadow.enabled) {
+                    glm::vec3 worldToLight = -glm::vec3(mainLightDirWorld_[0],
+                                                        mainLightDirWorld_[1],
+                                                        mainLightDirWorld_[2]);
+                    glm::vec3 viewToLight = glm::normalize(
+                        glm::vec3(view * glm::vec4(worldToLight, 0.0f)));
+                    float viewDirArr[3] = { viewToLight.x, viewToLight.y, viewToLight.z };
+                    postProcess_->ApplyContactShadow(glm::value_ptr(proj),
+                                                     viewDirArr,
+                                                     settings_.contactShadow.steps,
+                                                     settings_.contactShadow.maxDistance,
+                                                     settings_.contactShadow.thickness,
+                                                     settings_.contactShadow.strength);
+                }
+                if (settings_.ssr.enabled) {
+                    postProcess_->ApplySSR(glm::value_ptr(proj),
+                                           glm::value_ptr(invProj),
+                                           1.0f,
+                                           settings_.ssr.maxDistance,
+                                           settings_.ssr.steps,
+                                           settings_.ssr.thickness,
+                                           settings_.ssr.fadeEdge);
+                }
+                glm::mat4 curViewProj    = proj * view;
+                glm::mat4 curInvViewProj = glm::inverse(curViewProj);
+                bool taaOn = settings_.taa.enabled;
+                postProcess_->Apply(dsw, dsh,
+                                    settings_.exposure,
+                                    settings_.bloom.threshold,
+                                    settings_.bloom.strength,
+                                    settings_.bloom.iterations,
+                                    /*ssao*/ ssaoOn,
+                                    /*contactShadow*/ settings_.contactShadow.enabled,
+                                    /*fxaa*/ settings_.fxaa.enabled,
+                                    /*tonemap*/ settings_.tonemap.mode,
+                                    /*ssr*/ settings_.ssr.enabled,
+                                    /*taa*/ taaOn,
+                                    settings_.taa.blendNew,
+                                    hasPrevViewProj_ ? prevViewProj_
+                                                     : glm::value_ptr(curViewProj),
+                                    glm::value_ptr(curInvViewProj));
+                if (taaOn) {
+                    std::memcpy(prevViewProj_, glm::value_ptr(curViewProj),
+                                sizeof(prevViewProj_));
+                    hasPrevViewProj_ = true;
+                } else {
+                    hasPrevViewProj_ = false;
+                }
+            }
+            return;  // deferred frame done; skip the forward pipeline
+        }
+        // Fall back to forward this frame. A repeated failure logs once
+        // (DeferredRenderer's internal guard).
+    }
+
+    // --- Phase 10: bind HDR FBO for the entire scene, then composite ---
+    const int sw = window->GetWidth();
+    const int sh = window->GetHeight();
+    postProcess_->SetBloomEnabled(settings_.bloom.enabled);
+    postProcess_->SetMsaaSamples(settings_.msaa.samples);
+
+    // (IBL bake + shadow pass already ran before the deferred dispatch.)
 
     // If shadow pass was disabled/skipped, we still need the main light dir
     // for contact shadows. Do a cheap scan.
@@ -347,30 +554,11 @@ void ForwardRenderer::RenderCamera(Camera* camera, Window* window) {
     cmdBuffer_->End();
     cmdBuffer_->Submit();
 
-    // Gather visible MeshRenderers
-    auto& allRenderers = MeshRenderer::GetAllRenderers();
+    // Gather visible MeshRenderers (legacy forward: opaques + transparents in one
+    // shader-sorted list — transparency is handled by per-material blend state
+    // rather than a separate pass).
     std::vector<MeshRenderer*> visible;
-    visible.reserve(allRenderers.size());
-
-    for (auto* renderer : allRenderers) {
-        auto* owner = renderer->GetOwner();
-        if (!owner || owner->IsDestroyed() || !owner->IsActiveInHierarchy() || !renderer->IsEnabled()) {
-            continue;
-        }
-        if (!renderer->GetMesh() || !renderer->GetMaterial() || !renderer->GetMaterial()->GetShader()) {
-            continue;
-        }
-        visible.push_back(renderer);
-    }
-
-    // Sort by shader pointer, then material pointer (F5: minimize state switches)
-    std::sort(visible.begin(), visible.end(),
-        [](const MeshRenderer* a, const MeshRenderer* b) {
-            auto* shaderA = a->GetMaterial()->GetShader();
-            auto* shaderB = b->GetMaterial()->GetShader();
-            if (shaderA != shaderB) return shaderA < shaderB;
-            return a->GetMaterial() < b->GetMaterial();
-        });
+    CollectOpaqueDrawList(camera, visible, /*includeTransparent=*/true);
 
     for (auto* renderer : visible) {
         DrawMeshRenderer(renderer, camera);
@@ -565,6 +753,67 @@ void ForwardRenderer::DrawMeshRenderer(MeshRenderer* renderer, Camera* camera) {
 
     cmdBuffer_->End();
     cmdBuffer_->Submit();
+}
+
+void ForwardRenderer::RenderTransparentOverlay(Camera* camera, RHIRenderTarget* targetRT) {
+    if (!camera || !targetRT) return;
+    auto pbrShader = shaderManager_->Get("pbr");
+    if (!pbrShader) return;
+
+    std::vector<MeshRenderer*> transparents;
+    CollectTransparentDrawList(camera, transparents);
+    if (transparents.empty()) return;
+
+    targetRT->Bind();
+
+    glm::mat4 view = camera->GetViewMatrix();
+    glm::mat4 proj = camera->GetProjectionMatrix();
+
+    for (auto* r : transparents) {
+        auto* mesh     = r->GetMesh();
+        auto* material = r->GetMaterial();
+        auto* owner    = r->GetOwner();
+
+        // Use the PBR forward shader so we get full shadow + IBL parity
+        // with the forward path (the material's own shader may be a
+        // gbuffer-only program in deferred-aware materials; pbr is the
+        // canonical forward overlay shader).
+        PipelineDesc desc;
+        desc.shader        = pbrShader.get();
+        desc.vertexLayout  = mesh->GetVertexLayout();
+        desc.topology      = PrimitiveTopology::Triangles;
+        desc.depthTest     = true;
+        desc.depthWrite    = false;       // transparents must not write depth
+        desc.blendEnabled  = true;        // SRC_ALPHA / 1-SRC_ALPHA
+        auto* pipeline = GetOrCreatePipeline(desc);
+
+        cmdBuffer_->Begin();
+
+        glm::mat4 model    = const_cast<Transform&>(owner->GetTransform()).GetWorldMatrix();
+        glm::mat4 mvp      = proj * view * model;
+        glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(model)));
+
+        pipeline->Bind();
+        pbrShader->SetUniformMat4("uModel",        glm::value_ptr(model));
+        pbrShader->SetUniformMat4("uMVP",          glm::value_ptr(mvp));
+        pbrShader->SetUniformMat4("uNormalMatrix", glm::value_ptr(glm::mat4(normalMat)));
+
+        SetLightUniforms(pbrShader.get(), camera);
+        material->BindToShader(pbrShader.get());
+
+        cmdBuffer_->BindPipeline(pipeline);
+        cmdBuffer_->BindVertexBuffer(mesh->GetVertexBuffer());
+        if (mesh->HasIndices()) {
+            cmdBuffer_->BindIndexBuffer(mesh->GetIndexBuffer());
+            cmdBuffer_->DrawIndexed(mesh->GetIndexCount());
+        } else {
+            cmdBuffer_->Draw(mesh->GetVertexCount());
+        }
+        cmdBuffer_->End();
+        cmdBuffer_->Submit();
+    }
+
+    targetRT->Unbind();
 }
 
 uint64_t ForwardRenderer::HashPipelineDesc(const PipelineDesc& desc) {

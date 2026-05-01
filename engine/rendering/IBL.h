@@ -1,10 +1,13 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 
 namespace ark {
 
 class Skybox;
+class RHIDevice;
+class RHIRenderTarget;
 
 /// Image-Based Lighting precompute + runtime textures (Phase 12).
 ///
@@ -27,6 +30,13 @@ public:
 
     IBL(const IBL&) = delete;
     IBL& operator=(const IBL&) = delete;
+
+    /// Optional: route per-bake render targets through the RHI. When
+    /// unset the bake routines fall back to raw GL allocation (identical
+    /// to the pre-RT behaviour). Cubemap face-attach bakes (irradiance /
+    /// prefilter) currently always take the raw path because the RT
+    /// abstraction does not yet expose `AttachColorCubeFace(face, mip)`.
+    void SetDevice(RHIDevice* device) { device_ = device; }
 
     /// Precompute irradiance + prefilter + BRDF LUT from `envCubeMap`.
     /// Safe to call multiple times (e.g. after the skybox changes); each
@@ -75,6 +85,10 @@ private:
     uint32_t progIrradiance_ = 0;
     uint32_t progPrefilter_  = 0;
     uint32_t progBrdfLut_    = 0;
+
+    // Optional RHI route for the BrdfLUT 2D RT. Cubemap bakes stay raw.
+    RHIDevice* device_ = nullptr;
+    std::unique_ptr<RHIRenderTarget> rtBrdfLUT_;
 
     bool programsReady_ = false;
     bool valid_         = false;

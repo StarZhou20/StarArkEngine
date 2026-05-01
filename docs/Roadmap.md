@@ -1,10 +1,9 @@
 # StarArk 远期路线图（Post-v0.1）
 
-> **状态**: 远景 / 仅作记录。**当前实际开发阶段是 v0.1-renderer 里程碑**（见 [DevLog.md](DevLog.md)）。
-> 本文件只保存"v0.1 之后"的设想，防止它污染当下的工程主线。
+> **状态**: 当前阶段 = **v0.3-modspec 主路径全部落地**（详见 [DevLog.md §0](DevLog.md) + [ModSpec.md 附录 D](ModSpec.md)）。
+> 本文件保存中长期路线；**v0.3 主线规则已被 [ModSpec.md](ModSpec.md) 接管**，本文件只补充其未覆盖的渲染/资产/工具支线。
 >
-> 本文件的内容**不等于承诺**，也**不会被现在的代码依赖**。只有当 v0.1-renderer 完全稳定、
-> 打上 tag、文档自洽之后，才会开始考虑这里的任何一条。
+> 本文件的内容**不等于承诺**，也**不会被现在的代码依赖**。一旦与 ModSpec 冲突，**以 ModSpec 为准**。
 
 ---
 
@@ -70,12 +69,13 @@ content/
 | 15.F.2.1 | v0.2.x | Unity 风格 7 阶段 MOD 生命周期 | ✅ |
 | 15.F.3 | v0.2.x | 引擎 API 暴露 v2（Spawn/Find/Transform/Scene） | ✅ |
 | 15.F.4 | v0.2.x | MOD 热重载（collectible ALC + watcher） | ⏳ |
-| 15.F.5 | v0.2.x | mod.toml 元数据 + 依赖排序 | ⏳ |
-| 15.F.6 | v0.2.x | ScriptApi v3：Camera + Component 反射访问 | ⏳ |
+| 15.F.5 | **取消** | ~~mod.toml 元数据 + 依赖排序~~ | 升级到 v0.3 ModSpec §2，作为 v0.3 必做项 |
+| 15.F.6 | **取消** | ~~ScriptApi v3：Camera + Component 反射访问~~ | 升级到 v0.3 ModSpec §15，ScriptApi v2→v3 全量规划 |
+| **v0.3 ModSpec 主路径** | v0.3 | **§2/§3/§4.2/§5/§6.1/§6.2 全部已落** | ✅ 详见 [ModSpec.md 附录 D](ModSpec.md) |
 | 16 | v0.3 | 级联阴影 CSM | 开放世界远景阴影必备，但必须在 RenderSettings 反射之后加（不然 MOD 改不了参数） |
 | 17 | v0.3 | `.ark.mesh` + Asset 管线（hash/缓存） | 支撑大量资产；依赖 15.D 的 VFS |
-| 18 | v0.3 | Blender exporter 插件 | 依赖 15.C 的 TOML schema |
-| 19 | v0.3 | Prefab / 场景 chunk | 开放世界流式加载的前置；依赖 15.B GUID |
+| 18 | v0.3 | Blender exporter 插件 | 依赖 ModSpec §4 持久 ID + §3 路径语法 |
+| 19 | v0.3 | Prefab / 场景 chunk | 开放世界流式加载的前置；依赖 ModSpec §4 持久 ID |
 | 20 | v0.4 | 骨骼动画 + 动画状态机 | 角色 MOD 刚需；依赖 15.A 反射（不然 anim clip 名字是写死 enum） |
 | 21 | v0.4 | 物理（Bullet/Jolt） | - |
 | 22 | v0.4 | Recast/Detour 导航 | - |
@@ -83,106 +83,43 @@ content/
 | 24 | v0.5 | 行为树 `.bt.toml` + 对话 `.dlg.toml` | AI 写 NPC；依赖 15.F |
 | 25+ | v1.0 | LOD / Impostor / 音频 / 多人 | 内容扩张期 |
 
-### v0.2-data-contract 详细规划（当前开工目标）
+### v0.2 / v0.2.x 历史规划（已完结，保留备查）
 
-目标: **理论上任何 MOD 都能修改到的最小引擎**。没有 GUI 编辑器，没有脚本，但已经可以：
-
-1. 替换任意贴图 / 模型 / shader（把文件丢进 `mods/<modname>/...`）
-2. 修改任意场景对象的任意组件字段（编辑 TOML，外部工具或文本编辑器）
-3. 新增对象 / 组件实例（TOML 里加一段）
-4. 两个 MOD 同改一个对象 = 后加载的覆盖（基于 GUID）
-
-#### 关键设计决策
-
-**反射（15.A）**:
-- C++ 宏 + 静态注册表，不用 RTTI 之外的运行时魔法
-- 每个 `AComponent` 子类写 `ARK_REFLECT_COMPONENT_BEGIN(Light)` ... `ARK_REFLECT_FIELD(intensity, Float)` ... `ARK_REFLECT_COMPONENT_END()`
-- `TypeRegistry::Create("Light")` → `unique_ptr<AComponent>`
-- `TypeRegistry::GetFields("Light")` → `std::span<const FieldInfo>`；每个 `FieldInfo` 有 name / type / offset / default
-- 字段类型枚举: `Bool / Int / Float / Vec2 / Vec3 / Vec4 / Color3 / Color4 / Quat / String / EnumInt / AssetPath`
-- 读写通过 `offset + type tag + memcpy` 完成，无虚函数开销
-
-**GUID（15.B）**:
-- UUID v4，文本形式 `"a1b2c3d4-5e6f-7a8b-9c0d-e1f2a3b4c5d6"`
-- `AObject::GetGuid()` 返回 `const std::string&`；`CreateObject<T>()` 自动生成
-- 从 TOML 反序列化时使用文件里的 GUID，不生成新的
-- 引用其他对象: 字段类型 `ObjectRef`，序列化为 GUID 字符串；runtime 解析为 `AObject*`
-
-**场景 TOML（15.C）**:
-
-```toml
-[scene]
-name = "Village_Chunk_0_0"
-schema_version = 1
-
-[[objects]]
-guid = "a1b2c3d4-..."
-name = "Campfire_01"
-parent = ""  # empty or parent GUID
-transform.position = [2.3, 0.0, 1.5]
-transform.rotation = [0.0, 0.0, 0.0, 1.0]  # quat xyzw
-transform.scale    = [1.0, 1.0, 1.0]
-
-[[objects.components]]
-type = "MeshRenderer"
-mesh     = "content://meshes/campfire.obj"
-material = "content://materials/wood.mat.toml"
-
-[[objects.components]]
-type = "Light"
-light_type = "Point"
-color = [1.0, 0.5, 0.2]
-intensity = 8.0
-range = 5.0
-```
-
-- **组件表展开**: 一个对象的所有组件平铺，不嵌套；AI 修改一个组件不影响其他
-- **schema_version**: 将来升级字段时可批量迁移
-- **资源引用**: 用 URL-like 前缀（`content://`, `mods://`, `abs://`）；runtime 走 VFS 解析
-
-**资源覆盖 VFS（15.D）**:
-
-- `Paths::ResolveResource("textures/foo.png")` 新增方法
-- 查找顺序（后加载优先）:
-  1. `mods/<mod_1>/textures/foo.png`（按 load order 从高到低）
-  2. `mods/<mod_2>/textures/foo.png`
-  3. `content/textures/foo.png`（原版）
-- `mods/load_order.toml` 文件声明启用的 MOD 和顺序（Skyrim `plugins.txt` 等价物）
-- 覆盖只是路径替换，**不涉及合并逻辑**；合并冲突留给 15.C 的 GUID override（编辑同一个对象时后加载的胜出）
-
-#### v0.2 tag 的验收标准
-
-1. ✅ `CottageScene` 改为从 `content/scenes/cottage.toml` 加载，而非 C++ 硬编码
-2. ✅ 改 `cottage.toml` 里 Light 的 intensity → 重启后生效（mtime 热重载可选，不阻塞）
-3. ✅ 把 `mods/testmod/textures/ground.png` 丢进去 → 地面贴图被替换
-4. ✅ AI 读 `docs/` 就能写出一个新的 `.toml` 场景，不需要写一行 C++
-5. ✅ 两个 MOD 改同一个 Light GUID，后加载的胜出（日志打印 override chain）
+> 详细决策（反射宏 / GUID / TOML schema / VFS / load_order / 验收标准）见 `git log` 早期版本。当前实现状态以 [DevLog.md §0](DevLog.md) + [ModSpec.md 附录 D](ModSpec.md) 为准。
+>
+> v0.2-data-contract 五条验收 ✅ 全部达成；v0.2.x 收尾包括 ScriptApi v2 / Deferred Pipeline / v0.3 ModSpec 主路径。
 
 ### 长期路径上的"不做"（v0.2 范围外）
 
-- GUI 关卡编辑器（Blender 空间布局 + WPF Inspector 表单，够用了）
+- GUI 关卡编辑器（Blender 空间布局 + WPF Object Inspector 表单，够用了）
 - 自研 3D 建模 / 动画编辑
 - 自研 UI 设计器
-- ECS 切换（OOP Component + 反射 = 类 ECS 优势，但不打破现有 API）
+- 强制 ECS 切换（v0.3 起 ECS 范式优先，但 OOP Component + ScriptComponent 仍保留为 secondary 范式）
 - Lua / Python 脚本（单语言路线，C# 够用）
+
+> 进一步"暂时不做"清单见 [ModSpec.md 附录 C](ModSpec.md)。
+
+### 工程级硬性约定（不随版本演进，未接到作者通知前不变）
+
+1. **不打包引擎为 DLL**：`StarArkEngine` 在 v0.3/v0.4 期内保持 STATIC 库形态。渲染层/RHI/反射尚在频繁调整，过早稳定二进制边界会拖慢迭代。ModSpec §0 中提到的 `StarArkEngine.dll` 是远期目标，触发条件需作者明确通知。
+2. **启动器使用 WPF**（.NET 10）：放在 `tools/Launcher/`，与 `tools/LightingTuner/` 同前端栈。不使用 ImGui / Win32 / Avalonia / web 实现启动器。理由：现代化、设计可控，且与 Object Inspector（ModSpec §7.2）共享反射 schema + DataBinding。
+3. **不开放完整自定义渲染管线（SRP 风格）给 Mod**：渲染扩展走"后处理链 + shader override + 少量稳定钩子"三件套，不暴露 RHI command buffer 给托管端。理由见 [DevLog.md](DevLog.md) 同名讨论；详细方案在延迟管线落地之后另起 Phase。
 
 ---
 
-### 历史草案（已弃用）
+## 延迟渲染（Deferred Pipeline）✅ 2026-04-26 完结
 
-> 以下是 v0.1 冻结前的旧 Roadmap 表格草案，保留仅作历史参考。实际顺序以上面表格为准。
+v0.2.x 周期内 9 项前置 + 出口验收全部落地：`RHIRenderTarget` / MRT / Depth32F+RGBA16F 格式 / `Material::BindToShader` / `Material::IsTransparent` / `DrawListBuilder` / `gbuffer + lighting` shader。`RenderSettings::pipeline = Forward | Deferred` 切换，`game.config.json::pipeline` < `ARK_PIPELINE` env override；透明物体走 forward overlay 叠在 lit_ 上；Bistro deferred 烟测全过。详细记录见 [DevLog.md](DevLog.md) / `/memories/repo/v0.2-progress.md`。
 
-| Phase | 主题 | 备注 |
-|-------|------|------|
-| ~~15 C# Scripting Host~~ | 改为 15.F，放到 v0.2.x（反射之后） |
-| ~~16 组件反射 + GUID~~ | 提前到 15.A-B，列为 v0.2 核心 |
-| ~~17 TOML + Blender 导出~~ | 拆成 15.C 和 18，Blender 插件后置到 v0.3 |
-| ~~18 .ark.mesh~~ | 移到 v0.3 |
-| ~~19 Prefab + chunk~~ | 移到 v0.3 |
-| ~~20 行为树~~ | 移到 v0.5，依赖 15.F 脚本 |
-| ~~21 动画状态机~~ | 移到 v0.4 一起做 |
-| ~~22 导航~~ | v0.4 |
-| ~~23 流式加载~~ | v0.5 |
+**未来后续**（不阻塞现状，按需另起 Phase）：
+
+- Tile-based / Cluster-based 多光源剔除（当前几十光源够用）
+- `PostProcess` / `IBL` 残余 raw `glGenFramebuffers` 19 处迁到 `RHIRenderTarget`
+- DX12 / Vulkan 后端
+- 多线程命令录制（与 [KnownIssues §B1](KnownIssues.md) 一并立项）
+- Mod 后处理 / 渲染钩子（"效果级扩展点"，另起 Phase）
+
+---
 
 ### 有意识**不做**
 

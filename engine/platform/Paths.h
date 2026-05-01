@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace ark {
 
@@ -33,15 +34,64 @@ public:
     // may point into source tree instead.
     static std::filesystem::path ResolveContent(const std::string& relative);
 
-    // v0.2 15.D — MOD-aware VFS. Given a logical asset path (e.g. "textures/ground.png"),
-    // search each enabled mod under {Mods()}/<name>/ in load-order priority, then fall back
-    // to Content(). Returns the first existing file. If nothing matches, returns the
-    // Content() fallback anyway (caller will report the load failure).
+    // v0.3 ModSpec §3 — Mod-aware VFS with three-track path syntax.
+    //   "./<rest>"           → relative to currentModId (Mods()/<currentModId>/<rest>)
+    //   "mod://<id>/<rest>"  → explicit cross-mod (Mods()/<id>/<rest>)
+    //   "engine://<rest>"    → engine-shipped fallback (Content()/<rest>, not mod-overridable)
+    //   bare "<rest>"        → LEGACY (v0.2): walk load_order.toml mod stack then Content().
+    //                          Emits a deprecation warning per call site (rate-limited).
     //
-    // Load order is read from {Mods()}/load_order.toml on first call; use
-    // ReloadModOrder() to pick up changes. Cheap (filesystem::exists per candidate).
+    // currentModId is the id of the mod currently being loaded (for "./" resolution).
+    // Empty string means "no mod context" — only legacy/absolute schemes work then;
+    // a "./" path with empty currentModId falls back to Content() and warns.
+    //
+    // Returns the first existing file (or the best-guess fallback path if nothing
+    // exists; caller is responsible for reporting load failure).
+    static std::filesystem::path ResolveResource(const std::string& logical,
+                                                 const std::string& currentModId);
+
+    // Backward-compat: equivalent to ResolveResource(logical, GetCurrentModId()).
+    // The 1-arg form transparently picks up the thread-local mod scope (see
+    // ModContextScope below), so existing call sites in TextureLoader /
+    // ModelLoader resolve "./" paths correctly when the caller has entered
+    // a mod scope.
     static std::filesystem::path ResolveResource(const std::string& logical);
+
     static void ReloadModOrder();
+
+    // v0.3 ModSpec §2 — read-only access to the validated mod registry built
+    // by LoadModOrderImpl. Returns nullptr when the id is not enabled, not
+    // present, or failed validation. Callers must not retain the pointer
+    // across a ReloadModOrder() call.
+    static const struct ModInfo* FindModInfo(const std::string& id);
+    static const std::vector<std::string>& EnabledModIds();
+
+    // -----------------------------------------------------------------------
+    // v0.3 ModSpec §3 — Thread-local "current mod" scope.
+    //
+    // When loading scene/material/etc. files for a specific mod, push the
+    // mod's id onto the per-thread context stack so that loaders called
+    // downstream (TextureLoader, ModelLoader, …) can resolve "./" paths
+    // even though they don't take an explicit mod argument.
+    //
+    // Usage:
+    //   Paths::ModContextScope scope("vanilla");
+    //   sceneDoc.Load(...);   // every "./tex.png" resolves under mods/vanilla/
+    //
+    // Scopes nest; the innermost active id wins. GetCurrentModId() returns
+    // "" when no scope is active.
+    // -----------------------------------------------------------------------
+    static void               PushCurrentModId(const std::string& modId);
+    static void               PopCurrentModId();
+    static const std::string& GetCurrentModId();
+
+    class ModContextScope {
+    public:
+        explicit ModContextScope(const std::string& modId) { Paths::PushCurrentModId(modId); }
+        ~ModContextScope()                                  { Paths::PopCurrentModId(); }
+        ModContextScope(const ModContextScope&)            = delete;
+        ModContextScope& operator=(const ModContextScope&) = delete;
+    };
 
     // Developer convenience: override Content() to point to a source dir
     // (so editing source assets takes effect without install). Called by

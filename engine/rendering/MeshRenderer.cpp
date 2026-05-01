@@ -2,6 +2,8 @@
 #include "ShaderManager.h"
 #include "TextureLoader.h"
 #include "ModelLoader.h"
+#include "ForwardRenderer.h"
+#include "engine/core/EngineBase.h"
 #include "engine/debug/DebugListenBus.h"
 #include <algorithm>
 
@@ -98,6 +100,22 @@ void MeshRenderer::ResolveResources(RHIDevice* device, ShaderManager* shaders) {
     if (auto t = loadTex(materialEmissiveTex_, /*srgb=*/true))  mat->SetEmissiveTexture(t);
 
     material_ = std::move(mat);
+}
+
+// v0.3 — Reflection post-load hook. Pulls device + shaders from EngineBase
+// and re-runs ResolveResources(). Safe to call repeatedly (idempotent).
+void MeshRenderer::OnReflectionLoaded() {
+    auto& engine = EngineBase::Get();
+    RHIDevice* device = engine.GetRHIDevice();
+    ShaderManager* shaders = engine.GetRenderer()
+                                ? engine.GetRenderer()->GetShaderManager()
+                                : nullptr;
+    if (!device) {
+        ARK_LOG_WARN("MeshRenderer",
+            "OnReflectionLoaded: no RHIDevice yet — skipping resolve");
+        return;
+    }
+    ResolveResources(device, shaders);
 }
 
 // -----------------------------------------------------------------------------

@@ -4,11 +4,24 @@
 
 namespace ark {
 
+/// Top-level render-pipeline selector (Roadmap #9). `Forward` is the legacy
+/// path implemented by `ForwardRenderer`; `Deferred` routes through
+/// `DeferredRenderer` (G-buffer + fullscreen lighting). The deferred path
+/// is currently in build-out — selecting it before its shaders + Render
+/// pass are wired logs a one-shot warning and skips the frame.
+enum class RenderPipeline {
+    Forward = 0,
+    Deferred = 1,
+};
+
 /// Aggregated render-tuning parameters. Owned by `ForwardRenderer`, exposed
 /// via `GetRenderSettings()`. Intended endpoint for future JSON scene
 /// serialization (Phase M10) — all values here are per-scene tunables,
 /// never hardware capabilities.
 struct RenderSettings {
+    // --- Pipeline selection (Roadmap #9) ---------------------------------
+    RenderPipeline pipeline = RenderPipeline::Forward;
+
     // --- Global exposure (linear multiplier before ACES) -----------------
     float exposure = 1.30f;
 

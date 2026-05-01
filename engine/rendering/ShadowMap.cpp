@@ -1,6 +1,8 @@
 #include "ShadowMap.h"
 
 #include "engine/debug/DebugListenBus.h"
+#include "engine/rhi/RHIDevice.h"
+#include "engine/rhi/RHIRenderTarget.h"
 
 #include <GL/glew.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -10,54 +12,31 @@
 
 namespace ark {
 
-ShadowMap::~ShadowMap() {
-    if (depthTex_) glDeleteTextures(1, &depthTex_);
-    if (fbo_)      glDeleteFramebuffers(1, &fbo_);
-}
+ShadowMap::~ShadowMap() = default;
 
-bool ShadowMap::Init(int resolution) {
-    if (fbo_ != 0 && resolution == resolution_) {
+bool ShadowMap::Init(RHIDevice* device, int resolution) {
+    if (rt_ && resolution == resolution_) {
         return true;
     }
-
-    // (Re)create resources at new resolution.
-    if (depthTex_) { glDeleteTextures(1, &depthTex_); depthTex_ = 0; }
-    if (fbo_)      { glDeleteFramebuffers(1, &fbo_);  fbo_ = 0; }
-
+    rt_.reset();
     resolution_ = resolution;
 
-    glGenTextures(1, &depthTex_);
-    glBindTexture(GL_TEXTURE_2D, depthTex_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24,
-                 resolution, resolution, 0,
-                 GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    // Enable hardware PCF: sampler2DShadow returns a [0,1] value computed
-    // from a 2x2 bilinear depth-compare (LESS_OR_EQUAL). Each tap thus
-    // already integrates 4 samples -> dramatically smoother penumbra.
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-    // Samples outside the map are fully lit (depth = 1.0).
-    const float border[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
+    if (!device) {
+        ARK_LOG_ERROR("Render", "ShadowMap::Init: null RHIDevice");
+        return false;
+    }
 
-    glGenFramebuffers(1, &fbo_);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                           GL_TEXTURE_2D, depthTex_, 0);
-    // No color attachment on a shadow-only FBO.
-    glDrawBuffer(GL_NONE);
-    glReadBuffer(GL_NONE);
+    RenderTargetDesc desc;
+    desc.width  = resolution;
+    desc.height = resolution;
+    // No color attachments — depth-only shadow map.
+    desc.depth.format             = RTDepthFormat::Depth24;
+    desc.depth.shadowSampler      = true;
+    desc.depth.clampToBorderWhite = true;
 
-    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    if (status != GL_FRAMEBUFFER_COMPLETE) {
-        ARK_LOG_ERROR("Render", std::string("ShadowMap FBO incomplete: 0x") +
-                                std::to_string(status));
+    rt_ = device->CreateRenderTarget(desc);
+    if (!rt_) {
+        ARK_LOG_ERROR("Render", "ShadowMap: CreateRenderTarget returned null");
         return false;
     }
 
@@ -67,24 +46,24 @@ bool ShadowMap::Init(int resolution) {
     return true;
 }
 
+bool ShadowMap::IsValid() const {
+    return rt_ != nullptr;
+}
+
+uint32_t ShadowMap::GetDepthTexture() const {
+    return rt_ ? rt_->GetDepthTextureHandle() : 0u;
+}
+
 void ShadowMap::Begin() {
-    // Save current state.
-    glGetIntegerv(GL_VIEWPORT, prevViewport_);
-    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevFbo_);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
-    glViewport(0, 0, resolution_, resolution_);
-    glClear(GL_DEPTH_BUFFER_BIT);
-
-    // Front-face culling while rendering the shadow map helps combat
-    // "peter-panning"/self-shadow acne on closed meshes.
+    if (!rt_) return;
+    rt_->Bind();
+    rt_->Clear(/*color*/false, /*depth*/true);
     glEnable(GL_DEPTH_TEST);
 }
 
 void ShadowMap::End() {
-    glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo_));
-    glViewport(prevViewport_[0], prevViewport_[1],
-               prevViewport_[2], prevViewport_[3]);
+    if (!rt_) return;
+    rt_->Unbind();
 }
 
 void ShadowMap::UpdateMatrix(const glm::vec3& lightDirWorld,

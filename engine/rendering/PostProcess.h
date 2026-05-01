@@ -1,8 +1,13 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
+#include <vector>
 
 namespace ark {
+
+class RHIDevice;
+class RHIRenderTarget;
 
 /// PostProcess: owns an HDR offscreen framebuffer + bloom ping-pong chain, and
 /// runs the final tone-mapping composite to the default framebuffer.
@@ -25,12 +30,30 @@ public:
     PostProcess(const PostProcess&) = delete;
     PostProcess& operator=(const PostProcess&) = delete;
 
+    /// Provide the RHI device used to allocate render targets via the
+    /// `RHIRenderTarget` abstraction. Must be called before the first
+    /// `BeginScene()` (which lazily allocates targets). When null the
+    /// migrated paths fall back to raw GL allocation, identical to the
+    /// pre-RT behaviour.
+    void SetDevice(RHIDevice* device) { device_ = device; }
+
     /// Allocate initial GL resources at the given size. Safe to call once.
     void Init(int width, int height);
 
     /// Bind HDR FBO for scene rendering. Resizes internal targets if the
     /// window size changed since last frame.
     void BeginScene(int width, int height);
+
+    /// Stage E (deferred): adopt an externally-rendered HDR color buffer as
+    /// the source for the bloom/tone-map/FXAA composite chain. The blit
+    /// targets the internal `hdrColor_` (lazily allocating it if needed),
+    /// so a subsequent `Apply()` produces the final image. When `srcDepthTex`
+    /// is non-zero its contents are also blitted into `hdrDepth_`, enabling
+    /// the depth-aware effects (SSAO/SSR/Fog/Contact shadow/TAA reprojection)
+    /// in the same Apply pass. Cross-format depth blit (e.g. Depth32F →
+    /// Depth24) is OK — `glBlitFramebuffer` handles the conversion.
+    void IngestHDRColor(uint32_t srcColorTex, int srcW, int srcH,
+                        uint32_t srcDepthTex = 0);
 
     /// Unbind HDR FBO (revert to default framebuffer). If MSAA is active the
     /// multisample buffer is resolved into the sampleable single-sample
@@ -158,6 +181,11 @@ private:
     uint32_t ldrFBO_   = 0;
     uint32_t ldrColor_ = 0;
 
+    // Cached single-attachment FBO used by IngestHDRColor() to feed an
+    // external (e.g. deferred lit_) color+depth into hdrFBO_/hdrDepth_.
+    // Lazily created; reattaching the source textures each frame is free.
+    uint32_t ingestTmpFBO_ = 0;
+
     int width_  = 0;
     int height_ = 0;
 
@@ -185,6 +213,19 @@ private:
     bool ssaoValidThisFrame_ = false;  // set true by ApplySSAO, read by Apply
     bool contactValidThisFrame_ = false; // set true by ApplyContactShadow
     bool ssrValidThisFrame_  = false;  // set true by ApplySSR
+
+    // Render targets owned via the RHI. The raw GLuint fields above
+    // (hdrFBO_/hdrColor_/hdrDepth_/bloomFBO_[]/bloomColor_[]/...) are
+    // populated from these on alloc and zeroed on release. Downstream
+    // raw-GL bind sites stay untouched for now — follow-up passes will
+    // migrate them onto `RHIRenderTarget::Bind()`.
+    RHIDevice*                       device_ = nullptr;
+    std::unique_ptr<RHIRenderTarget> rtHdr_;
+    std::unique_ptr<RHIRenderTarget> rtBloom_[2];
+    std::unique_ptr<RHIRenderTarget> rtSsao_[2];
+    std::unique_ptr<RHIRenderTarget> rtContact_;
+    std::unique_ptr<RHIRenderTarget> rtSsr_;
+    std::unique_ptr<RHIRenderTarget> rtLdr_;
 
     // Fog state (set by SetFog, read by Apply).
     bool  fogEnabled_       = false;

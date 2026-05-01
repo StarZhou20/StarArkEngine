@@ -4,16 +4,34 @@
 > **C++ 标准**: C++20  
 > **头文件路径约定**: `#include "engine/模块/文件.h"`
 >
-> **稳定性**: 本文件描述 **v0.1-renderer** 的公共 API。以下条目在 v0.1 tag 后**签名不再变动**
-> （只会加新重载 / 新字段，不会改已有函数参数）：
+> ## ⚠️ 文档状态（2026-04-28）
+>
+> **本文件主体仍是 v0.1-renderer 时代的快照**，v0.2 / v0.3 期间引入的多个公共类型尚未补齐。
+> 在 ScriptApi v3 一起做大重写之前，请把以下类型直接看引擎源码，不要相信 §4 列表的"完整性"：
+>
+> | v0.2/v0.3 新增 | 头文件 | 替代 / 关系 |
+> |---|---|---|
+> | `SceneDoc` | `engine/serialization/SceneDoc.h` | **替代 §4.17 `SceneSerializer`**（后者只序列化 RenderSettings+Light，已废弃） |
+> | `TypeRegistry` / `FieldInfo` | `engine/core/TypeInfo.h` | 反射驱动序列化（v0.2 15.A） |
+> | `ModInfo` / `ModRegistry` | `engine/mod/ModInfo.h` | mod.toml schema v1（ModSpec §2） |
+> | `Paths` 三轨解析 | `engine/platform/Paths.h` | `./` / `mod://` / `engine://`（ModSpec §3）；裸路径会发 deprecation WARN |
+> | `PersistentId` | `engine/core/PersistentId.h` | `<mod_id>:<local_id>` 文法 + 校验（ModSpec §4.2） |
+> | `SaveHeader` | `engine/save/SaveHeader.h` | F5/F9 quicksave 头部 + 兼容性（ModSpec §6.1） |
+> | `SchemaHash` | `engine/core/SchemaHash.h` | registry-wide SHA-256（ModSpec §6.2） |
+> | `DeferredRenderer` / `DrawListBuilder` | `engine/rendering/DeferredRenderer.h` | `RenderSettings::pipeline = Forward \| Deferred` 双轨已落地 |
+> | `RHIRenderTarget` | `engine/rhi/RHIRenderTarget.h` | MRT / G-buffer 抽象（v0.2.x 延迟管线前置）|
+>
+> **持久身份**：`AObject::GetGuid()` 返回值在 v0.3 已切到 `"<mod_id>:<local_id>"` 扁平字符串（不再是 UUID v4）。`GetId()` 返回的 `uint64` 运行时句柄不变。
+>
+> **稳定性**: 以下 v0.1 条目在 v0.1 tag 后**签名不再变动**（只会加新重载 / 新字段）：
 >
 > - §1 `EngineBase` / §2 `SceneManager` + `AScene` / §3 `AObject` + `AComponent` + `Transform`
 > - §4.1 Camera / §4.2 Light / §4.3 Mesh / §4.4 Material / §4.5 MeshRenderer
 > - §4.6 ForwardRenderer（public getters/setters；`RenderFrame` 内部逻辑不稳定）
-> - §4.8 TextureLoader / §4.9 ModelLoader / §4.11 ShaderManager / §4.15 RenderSettings / §4.17 SceneSerializer
+> - §4.8 TextureLoader / §4.9 ModelLoader / §4.11 ShaderManager / §4.15 RenderSettings
 > - §5 Window / Input / Time / Paths
 >
-> **不稳定 / 内部**: §4.10 ShaderSources、§4.12 PostProcess、§4.13 Skybox、§4.14 IBL、§4.16 ShadowMap
+> **不稳定 / 内部**: §4.10 ShaderSources、§4.12 PostProcess、§4.13 Skybox、§4.14 IBL、§4.16 ShadowMap、~~§4.17 SceneSerializer~~（已被 SceneDoc 替代）
 > ——这些是引擎内部使用的单件，未来可能重构。不要在 game/ 里直接引用。
 
 ---
@@ -825,9 +843,11 @@ s.normalBias    = 0.010f;
 s.pcfKernel     = 2;      // 5×5 = 25 taps
 ```
 
-### 4.17 SceneSerializer
+### 4.17 SceneSerializer ⚠️ 已废弃
 
 **头文件**: `#include "engine/rendering/SceneSerializer.h"`
+
+> **状态（2026-04-28）**：v0.2 起场景持久化由 [`SceneDoc`](../engine/serialization/SceneDoc.h) 全面接管（反射驱动 TOML，覆盖所有组件 + addon overlay 语法）。`SceneSerializer` 当前仅用于 Lighting Tuner 的 `lighting.json` 调参面，新代码不要再用。后续 ScriptApi v3 重写时本节会被删除。
 
 渲染参数 + 光源的 JSON 序列化（Phase 14 / Mini-M10）。零依赖，为外部调光/材质工具提供的"数据面"。
 
@@ -953,6 +973,12 @@ GLFW 窗口封装，创建 OpenGL 4.5 Core 上下文。
 | `Paths::Logs()` | `std::filesystem::path` | `{GameRoot}/logs` — 运行时日志 |
 | `Paths::UserData(title)` | `std::filesystem::path` | `%APPDATA%/StarArk/{title}` — 存档/设置/shader 缓存 |
 | `Paths::ResolveContent("models/foo.obj")` | `std::filesystem::path` | 把 content 相对路径解析为实际文件系统路径 |
+| `Paths::ResolveResource(logical, modId)` | `std::filesystem::path` | **v0.3** 三轨路径解析。识别 `"./<r>"`(→ `Mods()/<modId>/<r>`) / `"mod://<id>/<r>"`(→ `Mods()/<id>/<r>`) / `"engine://<r>"`(→ `Content()/<r>`)。绝对路径直接返还。裸路径走旧 v0.2 mod stack 兼容 + 一次性 deprecation WARN。详见 [ModSpec §3](ModSpec.md) |
+| `Paths::ResolveResource(logical)` | `std::filesystem::path` | 同上单参版，自动取 thread-local 当前 mod ctx（见 `ModContextScope`）。`TextureLoader` / `ModelLoader` 用此版本，无需改 caller |
+| `Paths::ModContextScope scope(modId)` | RAII | 进入指定 mod 的资源解析作用域；scope 内所有 `"./"` 路径都解析到 `Mods()/<modId>/...`。可嵌套。SceneDoc/材质 loader 入口套一层即可让 downstream 自动正确解析 |
+| `Paths::PushCurrentModId / PopCurrentModId` | `void` | `ModContextScope` 的底层；线程本地栈，不要手动配对调用，优先用 RAII |
+| `Paths::GetCurrentModId()` | `const std::string&` | 当前栈顶 mod id；空栈返回 `""` |
+| `Paths::ReloadModOrder()` | `void` | 重新读取 `mods/load_order.toml`（v0.2 兼容路径；v0.3 mod.toml 落地后将由 mod 加载器替换） |
 | `Paths::SetDevContentOverride(abs)` | `void` | 开发期把 `Content()` 重定向到源码树 |
 
 ---

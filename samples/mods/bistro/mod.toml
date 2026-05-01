@@ -1,0 +1,19 @@
+schema_version = 1
+id             = "bistro"
+type           = "game"
+version        = "0.1.0"
+display_name   = "Bistro — Engine Dev Demo"
+authors        = ["StarArk SDK"]
+engine_min     = "0.3.0"
+script_api_min = 2
+supported_pipelines = ["forward", "deferred"]
+
+description = "Engine-dev demo game mod backed by the Amazon Lumberyard Bistro FBX. The scene is loaded from C++ (FBXDemoScene) — the FBX itself lives outside the mod under tmp/Bistro_v5_2/ because of its size; this mod entry exists so the launcher can list it. Not a content sample for ModSpec §1.1."
+license     = "MIT"
+default_locale = "zh-CN"
+locales        = ["zh-CN", "en-US"]
+
+# Hint to main_samples.cpp dispatcher: instead of loading scenes/main.toml under
+# CottageScene, this mod runs the hardcoded FBXDemoScene C++ class.
+[engine_dev]
+scene_class = "FBXDemoScene"

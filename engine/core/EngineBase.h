@@ -54,6 +54,14 @@ private:
     void StepUpdateTransforms();
     void StepDestroyObjects();
 
+    // v0.3 ModSpec §6.1 — F5/F9 quicksave hotkeys.
+    void HandleQuicksave();
+    void HandleQuickload();
+
+    // v0.3 ModSpec §5 — F6 applies scene.overlay.toml from every enabled
+    // addon mod onto the active scene.
+    void HandleApplyOverlays();
+
     std::unique_ptr<Window> window_;
     std::unique_ptr<RHIDevice> rhiDevice_;
     std::unique_ptr<ForwardRenderer> renderer_;

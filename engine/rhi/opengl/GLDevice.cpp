@@ -4,6 +4,7 @@
 #include "GLTexture.h"
 #include "GLPipeline.h"
 #include "GLCommandBuffer.h"
+#include "GLRenderTarget.h"
 
 namespace ark {
 
@@ -29,6 +30,10 @@ std::unique_ptr<RHIPipeline> GLDevice::CreatePipeline(const PipelineDesc& desc) 
 
 std::unique_ptr<RHICommandBuffer> GLDevice::CreateCommandBuffer() {
     return std::make_unique<GLCommandBuffer>();
+}
+
+std::unique_ptr<RHIRenderTarget> GLDevice::CreateRenderTarget(const RenderTargetDesc& desc) {
+    return std::make_unique<GLRenderTarget>(desc);
 }
 
 // Factory function

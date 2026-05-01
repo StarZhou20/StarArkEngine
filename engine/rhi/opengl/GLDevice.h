@@ -15,6 +15,7 @@ public:
     std::unique_ptr<RHITexture> CreateTexture() override;
     std::unique_ptr<RHIPipeline> CreatePipeline(const PipelineDesc& desc) override;
     std::unique_ptr<RHICommandBuffer> CreateCommandBuffer() override;
+    std::unique_ptr<RHIRenderTarget> CreateRenderTarget(const RenderTargetDesc& desc) override;
 };
 
 } // namespace ark

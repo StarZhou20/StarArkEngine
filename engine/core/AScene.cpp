@@ -43,4 +43,18 @@ void AScene::TransferToPersistent(AObject* obj) {
     ARK_LOG_WARN("Core", "TransferToPersistent: object not found in scene");
 }
 
+void AScene::Clear() {
+    // Destroy() routes through the normal lifecycle so OnDetach / OnDestroy
+    // can run. Components flushed by AObject's destructor when unique_ptr
+    // releases below.
+    for (auto& up : objectList_) {
+        if (up && !up->IsDestroyed()) {
+            up->Destroy();
+        }
+    }
+    objectList_.clear();
+    pendingList_.clear();
+    hasDestroyedObjects_ = false;
+}
+
 } // namespace ark

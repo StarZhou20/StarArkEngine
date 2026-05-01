@@ -52,6 +52,15 @@ public:
     void SetEngine(EngineBase* engine) { engine_ = engine; }
     EngineBase* GetEngine() const { return engine_; }
 
+    // v0.3 ModSpec §6.1 — wipe every object in this scene (both live
+    // and pending). Used by F9 quickload before SceneDoc::Load applies
+    // the on-disk sidecar.
+    //
+    // Calls Destroy() on each live object so its OnDetach / OnDestroy
+    // hooks run, then drops both vectors. Persistent / dontDestroy
+    // objects owned by EngineBase are NOT touched.
+    void Clear();
+
 private:
     std::string sceneName_;
     std::vector<std::unique_ptr<AObject>> objectList_;

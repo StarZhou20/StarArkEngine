@@ -1,0 +1,12 @@
+schema_version = 1
+id             = "testmod"
+type           = "addon"
+version        = "0.1.0"
+display_name   = "Test Texture Override"
+authors        = ["StarArk SDK"]
+engine_min     = "0.3.0"
+script_api_min = 2
+supported_pipelines = ["forward", "deferred"]
+
+description = "Smoke-test addon: only ships a textures/ folder to exercise the VFS override stack."
+applies_to  = ["sample_game"]

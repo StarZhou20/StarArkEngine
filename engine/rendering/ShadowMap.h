@@ -1,15 +1,13 @@
-// ShadowMap.h — Directional-light shadow map (Phase 13).
-//
-// Owns a GL_DEPTH_COMPONENT24 depth texture + FBO. The caller
-// (`ForwardRenderer`) is responsible for computing `lightSpaceMatrix`
-// from the light direction and rendering all shadow-casting meshes
-// with a depth-only pipeline while `Begin()` is active.
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <glm/glm.hpp>
 
 namespace ark {
+
+class RHIDevice;
+class RHIRenderTarget;
 
 class ShadowMap {
 public:
@@ -19,18 +17,18 @@ public:
     ShadowMap(const ShadowMap&) = delete;
     ShadowMap& operator=(const ShadowMap&) = delete;
 
-    /// Lazily create/recreate the FBO + depth texture at `resolution`.
-    /// Returns true if ready to render into.
-    bool Init(int resolution);
+    /// Lazily create/recreate the RT at `resolution`. Requires a valid
+    /// `RHIDevice` (uses `CreateRenderTarget` for a depth-only sampleable
+    /// PCF-enabled depth texture). Returns true on success.
+    bool Init(RHIDevice* device, int resolution);
 
-    /// Bind the shadow FBO, set viewport to map size, clear depth.
-    /// Caches the previous viewport + FBO to restore in End().
+    /// Bind the shadow RT, set viewport, clear depth.
     void Begin();
 
-    /// Restore previous FBO and viewport.
+    /// Restore previous FBO/viewport.
     void End();
 
-    uint32_t        GetDepthTexture() const { return depthTex_; }
+    uint32_t        GetDepthTexture() const;
     int             GetResolution() const { return resolution_; }
     const glm::mat4& GetLightSpaceMatrix() const { return lightSpaceMatrix_; }
     void            SetLightSpaceMatrix(const glm::mat4& m) { lightSpaceMatrix_ = m; }
@@ -45,17 +43,14 @@ public:
                       float farPlane,
                       int   resolution = 0);   // 0 = no texel snap
 
-    bool IsValid() const { return fbo_ != 0 && depthTex_ != 0; }
+    bool IsValid() const;
 
 private:
-    uint32_t fbo_       = 0;
-    uint32_t depthTex_  = 0;
+    std::unique_ptr<RHIRenderTarget> rt_;
     int      resolution_ = 0;
-
-    int prevViewport_[4] = {0, 0, 0, 0};
-    int prevFbo_         = 0;
 
     glm::mat4 lightSpaceMatrix_{1.0f};
 };
 
 } // namespace ark
+

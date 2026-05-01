@@ -24,6 +24,14 @@ public:
     // 反射支持：反射宏会 override 为字面类名。未反射组件返回空。
     virtual std::string_view GetReflectTypeName() const { return {}; }
 
+    // v0.3 — Hook fired by SceneDoc after all reflected fields have been
+    // written into the component (SceneDoc::Load, addition, components_attached,
+    // and overlay overrides). Default no-op. Components that need to translate
+    // serialized spec into runtime resources (e.g. MeshRenderer building Mesh+
+    // Material from mesh_kind/material_color) override this to drop the manual
+    // post-Load fixup that scenes used to do by hand.
+    virtual void OnReflectionLoaded() {}
+
     void SetEnabled(bool enabled) { enabled_ = enabled; }
     bool IsEnabled() const { return enabled_; }
 

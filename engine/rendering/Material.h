@@ -8,6 +8,19 @@
 
 namespace ark {
 
+/// Render pass slots a material can supply distinct shaders for. The
+/// renderer queries `GetShaderForPass(pass)` and falls back to `Forward`
+/// when the requested slot is empty (e.g. a material without a custom
+/// gbuffer shader still draws via deferred by sharing its forward shader,
+/// provided the forward shader writes the gbuffer-compatible outputs).
+enum class MaterialPass {
+    Forward,      // Default lit pass (HDR forward output).
+    GBuffer,      // Deferred geometry pass writes to MRT G-buffer.
+    Shadow,       // Depth-only pass for shadow maps (no fragment work).
+    Transparent,  // Alpha-blended forward pass after deferred resolve.
+    Count
+};
+
 /// Material holds a shader reference and per-material parameters.
 /// The ForwardRenderer sets per-frame uniforms (lights, camera);
 /// Material::Bind() sets per-material uniforms.
@@ -20,8 +33,38 @@ public:
     Material& operator=(const Material&) = delete;
 
     // --- Shader ---
-    void SetShader(std::shared_ptr<RHIShader> shader) { shader_ = std::move(shader); }
+    /// Legacy single-shader setter — fills the `Forward` slot. Existing
+    /// callers (cottage / Bistro / hellomod) keep working unchanged.
+    void SetShader(std::shared_ptr<RHIShader> shader) {
+        shader_ = shader;
+        passShaders_[static_cast<int>(MaterialPass::Forward)] = std::move(shader);
+    }
     RHIShader* GetShader() const { return shader_.get(); }
+
+    /// Per-pass shader slot. Pass `nullptr` to clear.
+    void SetShaderForPass(MaterialPass pass, std::shared_ptr<RHIShader> shader) {
+        passShaders_[static_cast<int>(pass)] = std::move(shader);
+        if (pass == MaterialPass::Forward) shader_ = passShaders_[0];
+    }
+
+    /// Resolve a shader for the requested pass, falling back to Forward when
+    /// the slot is empty. Returns nullptr only if Forward is itself empty.
+    RHIShader* GetShaderForPass(MaterialPass pass) const {
+        const int idx = static_cast<int>(pass);
+        if (passShaders_[idx]) return passShaders_[idx].get();
+        return passShaders_[static_cast<int>(MaterialPass::Forward)].get();
+    }
+
+    /// Whether a non-fallback shader is registered for the requested pass.
+    /// Used by the deferred renderer to decide "draw in gbuffer pass" vs
+    /// "draw in transparent forward pass".
+    bool HasShaderForPass(MaterialPass pass) const {
+        return passShaders_[static_cast<int>(pass)] != nullptr;
+    }
+
+    // --- Render queue ---
+    void SetTransparent(bool t) { transparent_ = t; }
+    bool IsTransparent() const { return transparent_; }
 
     // --- Color properties ---
     void SetColor(const glm::vec4& color) { color_ = color; }
@@ -71,10 +114,18 @@ public:
     RHITexture* GetEmissiveTexture() const { return emissiveTex_.get(); }
 
     // --- Apply per-material uniforms to shader ---
+    /// Bind material params + textures to the material's own (Forward) shader.
     void Bind() const;
+    /// Bind material params + textures to an explicitly supplied shader.
+    /// Used by DeferredRenderer to feed the same Material into the shared
+    /// `gbuffer` shader without overwriting `shader_`. Texture units used
+    /// (0..4) match `Bind()` exactly.
+    void BindToShader(RHIShader* shader) const;
 
 private:
     std::shared_ptr<RHIShader> shader_;
+    std::shared_ptr<RHIShader> passShaders_[static_cast<int>(MaterialPass::Count)] = {};
+    bool transparent_ = false;
     std::shared_ptr<RHITexture> diffuseTex_;
     std::shared_ptr<RHITexture> normalTex_;
     std::shared_ptr<RHITexture> metallicRoughnessTex_;

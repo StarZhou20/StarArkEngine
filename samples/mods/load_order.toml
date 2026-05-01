@@ -1,8 +1,10 @@
 # mods/load_order.toml — enabled mods in priority order.
 # 同路径资源：后列出的 mod 会覆盖先列出的；content/ 始终是最后回退。
+#
+# v0.3+ 启动器会重写本文件。手工修改仅限 dev 绿色启动与烟测。
 
 [[mod]]
-name = "testmod"
+name = "vanilla"
 enabled = true
 
 [[mod]]

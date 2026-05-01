@@ -1,5 +1,7 @@
 #include "IBL.h"
 #include "engine/debug/DebugListenBus.h"
+#include "engine/rhi/RHIDevice.h"
+#include "engine/rhi/RHIRenderTarget.h"
 
 #include <GL/glew.h>
 #include <glm/glm.hpp>
@@ -212,7 +214,14 @@ IBL::~IBL() {
 void IBL::ReleaseTextures() {
     if (irradianceMap_) { glDeleteTextures(1, &irradianceMap_); irradianceMap_ = 0; }
     if (prefilterMap_)  { glDeleteTextures(1, &prefilterMap_);  prefilterMap_  = 0; }
-    if (brdfLUT_)       { glDeleteTextures(1, &brdfLUT_);       brdfLUT_       = 0; }
+    if (rtBrdfLUT_) {
+        // RT owns the texture; just drop it and zero the cached handle.
+        rtBrdfLUT_.reset();
+        brdfLUT_ = 0;
+    } else if (brdfLUT_) {
+        glDeleteTextures(1, &brdfLUT_);
+        brdfLUT_ = 0;
+    }
     valid_ = false;
     prefilterMipLevels_ = 0;
 }
@@ -407,22 +416,46 @@ void IBL::BakePrefilter(uint32_t envCube, int size) {
 }
 
 void IBL::BakeBrdfLUT(int size) {
-    glGenTextures(1, &brdfLUT_);
-    glBindTexture(GL_TEXTURE_2D, brdfLUT_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, size, size, 0, GL_RG, GL_FLOAT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
     GLuint fbo = 0, rbo = 0;
-    glGenFramebuffers(1, &fbo);
-    glGenRenderbuffers(1, &rbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glBindRenderbuffer(GL_RENDERBUFFER, rbo);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, size, size);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, brdfLUT_, 0);
+    bool ownRT = false;
+
+    if (device_) {
+        // RHI path: a single-color RG16F + depth-RBO 2D render target.
+        RenderTargetDesc d;
+        d.width  = size;
+        d.height = size;
+        RTColorAttachmentDesc c;
+        c.format = RTColorFormat::RG16F;
+        d.colors.push_back(c);
+        d.depth.format       = RTDepthFormat::Depth24;
+        d.depth.renderbuffer = true;
+        rtBrdfLUT_ = device_->CreateRenderTarget(d);
+        if (rtBrdfLUT_) {
+            brdfLUT_ = rtBrdfLUT_->GetColorTextureHandle(0);
+            fbo = static_cast<GLuint>(rtBrdfLUT_->GetNativeFramebufferHandle());
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            ownRT = true;
+        }
+    }
+
+    if (!ownRT) {
+        // Raw fallback (kept verbatim for safety).
+        glGenTextures(1, &brdfLUT_);
+        glBindTexture(GL_TEXTURE_2D, brdfLUT_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, size, size, 0, GL_RG, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        glGenFramebuffers(1, &fbo);
+        glGenRenderbuffers(1, &rbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, size, size);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, brdfLUT_, 0);
+    }
 
     glViewport(0, 0, size, size);
     glUseProgram(progBrdfLut_);
@@ -433,8 +466,10 @@ void IBL::BakeBrdfLUT(int size) {
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDeleteFramebuffers(1, &fbo);
-    glDeleteRenderbuffers(1, &rbo);
+    if (!ownRT) {
+        glDeleteFramebuffers(1, &fbo);
+        glDeleteRenderbuffers(1, &rbo);
+    }
 }
 
 void IBL::Bake(uint32_t envCubeMap, int irradianceSize, int prefilterSize, int brdfLutSize) {

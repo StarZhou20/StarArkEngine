@@ -1,0 +1,13 @@
+schema_version = 1
+id             = "hellomod"
+type           = "addon"
+version        = "0.1.0"
+display_name   = "HelloMod"
+authors        = ["StarArk SDK"]
+engine_min     = "0.3.0"
+script_api_min = 2
+supported_pipelines = ["forward", "deferred"]
+
+description = "Sample MOD shipped with the SDK. F1=spawn / F2=destroy / F3=print pos."
+license     = "MIT"
+applies_to  = ["vanilla"]

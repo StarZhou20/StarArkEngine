@@ -7,5 +7,6 @@
     "vsync": true
   },
   "startup_scene": null,
-  "dev_mode": false
+  "dev_mode": false,
+  "pipeline": "forward"
 }

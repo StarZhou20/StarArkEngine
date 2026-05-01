@@ -19,9 +19,17 @@
 
 #include "engine/core/AScene.h"
 
+#include <string>
+
 class CottageScene : public ark::AScene {
 public:
     void OnLoad() override;
     void Tick(float /*dt*/) override {}
     void OnUnload() override {}
+
+    // v0.3 — when set (e.g. from main_samples --game=<id>), CottageScene loads
+    // mods/<id>/scenes/main.toml under a ModContextScope("<id>") instead of
+    // the legacy content/scenes/cottage.toml path. Defaults to "vanilla".
+    static void               SetActiveGameMod(std::string id);
+    static const std::string& GetActiveGameMod();
 };

@@ -1,0 +1,14 @@
+schema_version = 1
+id             = "vanilla"
+type           = "game"
+version        = "0.1.0"
+display_name   = "Vanilla — Cottage"
+authors        = ["StarArk SDK"]
+engine_min     = "0.3.0"
+script_api_min = 2
+supported_pipelines = ["forward", "deferred"]
+
+description = "v0.3 ModSpec §1.1 reference game mod — the cottage scene, packaged as a self-contained game."
+license     = "MIT"
+default_locale = "zh-CN"
+locales        = ["zh-CN", "en-US"]

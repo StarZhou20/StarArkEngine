@@ -3,6 +3,8 @@
 > **读者**: 不熟悉本工程的 AI 编码助手 / 开发者。
 > **目的**: 一页讲清楚 v0.1 **能做什么 / 不能做什么 / 需要什么输入**，让你不用问作者就能写代码。
 > 精确的函数签名请看 [API.md](API.md)；历史实现记录见 [DevLog.md](DevLog.md)。
+>
+> **v0.3 起的 mod 范式 / 数据契约规则**见 [ModSpec.md](ModSpec.md)（自包含 mod / 三轨路径 / 双层持久身份 / ScriptApi v3 等）。本文件只描述 v0.1-renderer 已冻结的渲染后端能力。
 
 ---
 
@@ -40,6 +42,7 @@
 | 能力 | 细节 |
 |------|------|
 | Forward PBR | Cook-Torrance（GGX + Smith + Fresnel-Schlick）；metallic-roughness 工作流 |
+| Deferred PBR | v0.2.x 落地：4-RT G-buffer + Depth32F + 全屏 Lighting Pass；`RenderSettings::pipeline = Forward \| Deferred` 切换；透明走 forward overlay 叠在 lit_ 上 |
 | 多光源 | 最多 **4 方向光 + 8 点光 + 4 聚光灯**（shader 数组硬上限） |
 | 物理光衰减 | 点光/聚光 1/r² + 软截断（`range` 外淡出） |
 | 多贴图 PBR | albedo / normal（TBN）/ MR（G=rough, B=metal）/ AO（R）/ emissive |
@@ -63,6 +66,7 @@
 
 - `Paths::Init(argv[0])` 必须 `main()` 第一行
 - `Paths::ResolveContent("models/foo.obj")` → 绝对路径（exe 旁的 `content/`）
+- v0.3 起 mod 资源应改用三轨语法 `./` / `mod://` / `engine://`（[ModSpec.md §3](ModSpec.md)）；裸路径 fallback 仍可工作但发 deprecation WARN
 - Build 已配置 POST_BUILD 拷 `engine/shaders/` + 样例 `content/` 到 exe 旁
 - 可执行文件：`build/game/StarArkGame.exe`（空壳）、`build/samples/StarArkSamples.exe`（演示场景）
 
@@ -73,7 +77,6 @@
 | 不做 | 理由 / 什么时候有 |
 |------|------------------|
 | **脚本语言**（C# / Lua / Python） | ✅ v0.2.x：C# (CoreCLR / .NET 10) MOD 系统已上线；详见 [DevLog Phase 15.F](DevLog.md)。Lua/Python 不计划。 |
-| **场景对象序列化** | 只有 `RenderSettings + Light` 序列化（`SceneSerializer`），其它组件/对象/材质/网格没有序列化 |
 | **Prefab / 预制体** | 没有，手写构造 |
 | **运行时 Inspector / GUI 编辑器** | 没有；外部 WPF Lighting Tuner 只编辑 `lighting.json` |
 | **物理 / 碰撞检测** | 没有 `RigidBody` / `Collider` / 射线查询 |

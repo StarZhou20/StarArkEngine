@@ -33,6 +33,14 @@
 
 **缓解**: v0.1 暂不做多线程/DX12，先维持现状。DX12 后端立项时一并重做。
 
+### ~~B1.5. RHI 缺 RenderTarget / MRT / 完整纹理格式~~ ✅ 2026-04-26 完结
+
+`RHIRenderTarget` 抽象 + MRT 4-RT G-buffer + Depth32F/RGBA16F/RG16F 格式枚举均已落地（v0.2.x 延迟管线前置）。`PostProcess` / `IBL` 内剩余 raw `glGenFramebuffers` 是 follow-up，不阻塞 deferred 落地。详见 [Roadmap.md "延迟渲染前置工作清单"](Roadmap.md)。
+
+### ~~B1.6. Material 单 shader 假设 / 缺 RenderQueue~~ ✅ 2026-04-26 完结
+
+`Material::BindToShader(RHIShader*)` 显式绑（deferred 喂 gbuffer / forward 喂 pbr）；`Material::IsTransparent()` + `DrawListBuilder` 双桶完成 opaque/transparent 路由。
+
 ### B2. 静态注册表非线程安全
 
 `Camera::allCameras_` / `Light::allLights_` / `MeshRenderer::allRenderers_` 都是静态 `std::vector<T*>`，由 `OnAttach`/`OnDetach` 增删。所有 Tick/渲染逻辑跑在主线程，当前没有竞态——但任何并发化尝试（多线程 Tick / 异步加载）都会踩坑。
@@ -61,9 +69,9 @@ JSON 保存 / Lighting Tuner / `RenderSettings.h` / shader uniform / `ForwardRen
 
 **缓解**: 外部工具生成的 JSON 保持 ASCII + 无注释即可。
 
-### B7. Light 匹配靠 `AObject::GetName()` 字符串相等
+### ~~B7. Light 匹配靠 `AObject::GetName()` 字符串相等~~ ✅ v0.3 完结
 
-两个重名光源会互相覆盖；改名会让 JSON 里的对应条目失配。v0.1 **没有 GUID**。
+持久身份已升级到 `"<mod_id>:<local_id>"` 扁平字符串（[ModSpec.md §4.2](ModSpec.md) + `engine/core/PersistentId.h`）。`SceneDoc` 走 GUID 匹配，重名不再有歧义。`SceneSerializer`（已废弃，仅 lighting.json 仍用名字）不在主链路上。
 
 ### B8. IBL 只烘焙一次
 
@@ -121,3 +129,45 @@ JSON 保存 / Lighting Tuner / `RenderSettings.h` / shader uniform / `ForwardRen
 - [ ] `README.md` 需重写为 v0.1 定位页
 - [ ] `docs/Build.md` 可选：把 [DevLog §2](DevLog.md) 的构建命令独立出来
 - [ ] 样例场景缺一个"最小完整 demo"示范（当前 samples 都是演示单个功能）
+
+---
+
+## G. v0.3 ModSpec 已知缺口（2026-04-26 落地后）
+
+> 主路径见 [ModSpec.md 附录 D](ModSpec.md)。本节只列"已知道、暂时没修"的边界。
+
+### G1. cottage 仍在 `samples/content/`，未迁到 `mods/vanilla/`
+
+附录 A 要求 `samples/cottage.toml` 重构为 `mods/vanilla/scenes/cottage.toml`。当前仍住在 `samples/content/scenes/cottage.toml`，是历史路径；不影响功能但和 ModSpec §1.1 "一个 mod 文件夹 = 一个完整游戏"心智不符。重构窗口：等 `mods/vanilla/` 体系定型一起迁。
+
+### G2. MeshRenderer Material 字段仍 inline
+
+`MeshRenderer` 反射 15 个字段（mesh + material + 5 张贴图路径）全部 inline 在组件上。附录 A 要求拆 Material sidecar；当前未拆，影响是 Material 不能被多个 MeshRenderer 共享、overlay 改 Material 必须按 component 改。
+
+### G3. ark-validate CLI 缺位
+
+§4.2 要求"检测对象 ID 在两次保存间漂移"为离线工具任务。当前在线校验已能在 `SceneDoc::Load` 把非法 persistent ID 推到 stderr，但 ID 漂移 / 重复 / Mod 内自洽这些规则需要 CLI 工具走全部 mod 文件，没做。
+
+### ~~G4. §5 三种次要操作未做端到端实测~~ ✅ 2026-04-28 完结
+
+`hellomod/scene.overlay.toml` 扩展为§5 四种操作全覆盖：deletions=1 (`core:torch_r`) / overrides=2 (`core:sun` / `core:torch_l`) / components_attached=1 (Light 加到 `core:metal_orb`) / additions=1 (`hellomod:welcome_sign` 发光方块。`ARK_AUTO_OVERLAY=1` 烟测日志确认 `applied: deletions=1 overrides=2 components_attached=1 additions=1`，stderr=0。
+
+### G5. quicksave scope = 仅场景 + header
+
+§6.1 完整 spec 要求 ECS systems 自定义状态（计时器、随机种子、scripting 状态等）也参与存档。当前 `HandleQuicksave` 只 dump `SaveHeader` + 整个 AScene；ECS 持久化未做。
+
+### G6. §6.3 缺失 mod 时的玩家询问 UX 缺位
+
+`SaveHeader::CheckCompatibility` 已能识别 `kMissingMod` / `kVersionMismatch` / `kSchemaMismatch`，`HandleQuickload` 在 incompatible 时打 WARN 并保留原场景。但 spec 所述"询问玩家继续 / 取消" 需要启动器侧 UI，跨进程，没做。
+
+### G7. ScriptApi 仍 v2
+
+`ARK_SCRIPT_API_VERSION = 2`。§15 ScriptApi v3（Camera 控制 / Component 反射访问 / quicksave 触发）未暴露到 C# 端。HelloMod 当前还是 v2 心智。
+
+### G8. 新增 `.cpp` 必须 reconfigure
+
+`engine/CMakeLists.txt` 用 `GLOB_RECURSE`。新增源文件后第一次 `nmake` 不会感知，链接时报 LNK2019。修复模式：`cmake -B build -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_POLICY_VERSION_MINIMUM=3.5` 跑一次再 build。规则上限是改 GLOB 为显式 list，但破坏性较大，暂留 known caveat。
+
+### G9. PowerShell 终端 cwd 漂移 + .exe 锁
+
+构建命令在持久 PowerShell 终端里执行时，cwd 可能停在 `build\samples`（上次 smoke 留下的），需显式 `Set-Location D:\Code\StarArkEngine`。另：上一次 smoke 的 `StarArkSamples.exe` 没退出会卡 `LNK1168`，构建前 `Get-Process StarArkSamples,StarArkGame | Stop-Process -Force`。

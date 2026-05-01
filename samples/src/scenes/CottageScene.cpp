@@ -33,38 +33,63 @@ public:
     }
 };
 
+// v0.3 — game mod id selected from CLI (--game=<id>). Defaults to "vanilla"
+// so launching by alias `StarArkSamples.exe cottage` keeps working.
+std::string& ActiveGameModRef() {
+    static std::string id = "vanilla";
+    return id;
+}
+
 } // namespace
 
+void CottageScene::SetActiveGameMod(std::string id) {
+    ActiveGameModRef() = std::move(id);
+}
+const std::string& CottageScene::GetActiveGameMod() {
+    return ActiveGameModRef();
+}
+
 void CottageScene::OnLoad() {
-    // SceneDoc 会改写 scene name，但先给个 fallback。
-    SetSceneName("CottageScene");
-    ARK_LOG_INFO("Core", "CottageScene::OnLoad — v0.2 TOML-driven");
+    const std::string& modId = ActiveGameModRef();
+
+    SetSceneName(std::string("GameMod:") + modId);
+    ARK_LOG_INFO("Core",
+        std::string("CottageScene::OnLoad — loading game mod '") + modId + "'");
 
     auto& engine   = ark::EngineBase::Get();
     auto* device   = engine.GetRHIDevice();
     auto* renderer = engine.GetRenderer();
 
-    // ---- 从 TOML 加载对象 / 组件 ----
-    auto tomlPath = ark::Paths::ResolveContent("scenes/cottage.toml");
-    if (!ark::SceneDoc::Load(tomlPath, this)) {
-        ARK_LOG_FATAL("Core", std::string("failed to load scene TOML: ") + tomlPath.string());
+    // ---- v0.3 — load scene from mods/<id>/scenes/main.toml under mod context.
+    // Falls back to the legacy content/scenes/cottage.toml only when the
+    // mod-side file is missing (eases mid-migration debugging).
+    const auto modScenePath = ark::Paths::Mods() / modId / "scenes" / "main.toml";
+    std::filesystem::path tomlPath = modScenePath;
+    bool useMod = std::filesystem::exists(modScenePath);
+    if (!useMod) {
+        tomlPath = ark::Paths::ResolveContent("scenes/cottage.toml");
+        ARK_LOG_WARN("Core",
+            std::string("game mod '") + modId
+            + "' has no scenes/main.toml — falling back to content/scenes/cottage.toml");
     }
 
-    // ---- 为 MeshRenderer 构造 runtime 资源（mesh_ + material_）----
-    // SceneDoc::Load 只填 spec；primitive/模型的实际构造在这里做。
-    // 注意：CreateObject 放进 pendingList_，这一帧末才会进入 objectList_。
-    auto resolveAll = [&](std::vector<std::unique_ptr<ark::AObject>>& list) {
-        for (auto& up : list) {
-            if (!up) continue;
-            for (auto& compUp : up->GetComponents()) {
-                if (auto* mr = dynamic_cast<ark::MeshRenderer*>(compUp.get())) {
-                    mr->ResolveResources(device, renderer->GetShaderManager());
-                }
-            }
+    if (useMod) {
+        ark::Paths::ModContextScope scope(modId);
+        if (!ark::SceneDoc::Load(tomlPath, this)) {
+            ARK_LOG_FATAL("Core", std::string("failed to load scene TOML: ") + tomlPath.string());
         }
-    };
-    resolveAll(GetObjectList());
-    resolveAll(GetPendingList());
+    } else {
+        if (!ark::SceneDoc::Load(tomlPath, this)) {
+            ARK_LOG_FATAL("Core", std::string("failed to load scene TOML: ") + tomlPath.string());
+        }
+    }
+
+    // v0.3 — MeshRenderer::OnReflectionLoaded() now wires up Mesh+Material
+    // automatically as part of SceneDoc::Load, so the manual `resolveAll`
+    // walk is gone. Resources are realized before AddComponentRaw, before
+    // OnAttach, so any code reading GetMesh()/GetMaterial() in OnAttach
+    // sees a fully-built object.
+    (void)engine; (void)device; (void)renderer;
 
     // ---- 给 MainCamera 补上 OrbitCamera + EscapeToQuit（尚未反射）----
     auto findByName = [&](const std::string& name) -> ark::AObject* {

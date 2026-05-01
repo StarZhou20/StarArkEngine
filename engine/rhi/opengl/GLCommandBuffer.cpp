@@ -22,6 +22,38 @@ void GLCommandBuffer::Submit() {
     currentPipeline_ = nullptr;
 }
 
+void GLCommandBuffer::SetRenderTarget(RHIRenderTarget* target) {
+    // Capture by value so the pointer is stable when the lambda runs.
+    commands_.push_back([target]() {
+        if (target) {
+            // RHIRenderTarget::Bind() saves prev FBO+viewport so a
+            // subsequent SetRenderTarget(nullptr) returning to default
+            // FB still works on backends without explicit unbind.
+            target->Bind();
+        } else {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
+    });
+}
+
+void GLCommandBuffer::BlitToBackBuffer(RHIRenderTarget* src,
+                                       int dstX, int dstY,
+                                       int dstW, int dstH) {
+    if (!src) return;
+    const int sw = src->GetWidth();
+    const int sh = src->GetHeight();
+    const auto fbo = static_cast<GLuint>(src->GetNativeFramebufferHandle());
+    commands_.push_back([fbo, sw, sh, dstX, dstY, dstW, dstH]() {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+        glBlitFramebuffer(0, 0, sw, sh,
+                          dstX, dstY, dstX + dstW, dstY + dstH,
+                          GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    });
+}
+
 void GLCommandBuffer::SetViewport(int x, int y, int width, int height) {
     commands_.push_back([x, y, width, height]() {
         glViewport(x, y, width, height);

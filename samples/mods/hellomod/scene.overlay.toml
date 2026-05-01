@@ -1,0 +1,91 @@
+# hellomod scene overlay — v0.3 ModSpec §5 e2e demo.
+#
+# Exercises all four overlay operations against CottageScene:
+#   - overrides:           dim core:sun + core:torch_l
+#   - deletions:           remove core:torch_r outright
+#   - components_attached: glue a small Point Light onto core:metal_orb
+#   - additions:           spawn a new emissive cube above the cottage
+#
+# Triggered at runtime via F6 (interactive) or ARK_AUTO_OVERLAY=1 (smoke).
+# Target guids match samples/content/scenes/cottage.toml.
+
+[overlay]
+schema_version = 1
+name = "hellomod-demo-overlay"
+
+# ---------------------------------------------------------------------------
+# overrides — patch fields on existing components.
+# ---------------------------------------------------------------------------
+
+# Sun: 3.0 → 9.5, warm white → cool blue.
+[[overrides]]
+target_guid    = "core:sun"
+component_type = "Light"
+intensity      = 9.5
+color          = [0.7, 0.85, 1.0]
+
+# Left torch: 12.0 → 0.5 (effectively off).
+[[overrides]]
+target_guid    = "core:torch_l"
+component_type = "Light"
+intensity      = 0.5
+
+# ---------------------------------------------------------------------------
+# deletions — remove an existing object outright.
+# ---------------------------------------------------------------------------
+
+# Right torch — gone. Combined with the dimmed left torch above this means
+# the cottage interior is lit only by the (re-tinted) sun.
+[[deletions]]
+target_guid = "core:torch_r"
+
+# ---------------------------------------------------------------------------
+# components_attached — bolt a new component onto an existing object.
+# ---------------------------------------------------------------------------
+
+# Make the metal orb self-illuminate by stapling a small point light to it.
+# (Order is deletions → overrides → components_attached → additions, so the
+# orb is guaranteed to still exist here.)
+[[components_attached]]
+target_guid = "core:metal_orb"
+type        = "Light"
+light_type  = 1                       # Point
+color       = [1.0, 0.9, 0.4]
+intensity   = 2.0
+range       = 3.0
+attenuation_const = 1.0
+attenuation_lin   = 0.09
+attenuation_quad  = 0.032
+spot_inner_deg    = 12.5
+spot_outer_deg    = 17.5
+ambient = [0.0, 0.0, 0.0]
+
+# ---------------------------------------------------------------------------
+# additions — spawn a brand-new object. Same field layout as base [[objects]].
+# ---------------------------------------------------------------------------
+
+[[additions]]
+guid   = "hellomod:welcome_sign"
+name   = "WelcomeSign"
+parent = ""
+transform.position = [0.0, 3.2, 0.0]
+transform.rotation = [0.0, 0.0, 0.0, 1.0]
+transform.scale    = [0.6, 0.2, 0.05]
+
+[[additions.components]]
+type = "MeshRenderer"
+mesh_kind = "cube"
+mesh_path = ""
+mesh_paramf = 1.0
+mesh_parami = 0
+material_shader = "pbr"
+material_color = [0.9, 0.95, 1.0, 1.0]
+material_metallic = 0.0
+material_roughness = 0.4
+material_ao = 1.0
+material_emissive = [0.6, 0.7, 1.0]
+tex_albedo = ""
+tex_normal = ""
+tex_mra = ""
+tex_ao = ""
+tex_emissive = ""

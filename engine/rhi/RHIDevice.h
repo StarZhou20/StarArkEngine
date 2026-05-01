@@ -6,6 +6,7 @@
 #include "RHITexture.h"
 #include "RHIPipeline.h"
 #include "RHICommandBuffer.h"
+#include "RHIRenderTarget.h"
 #include <memory>
 
 namespace ark {
@@ -19,6 +20,7 @@ public:
     virtual std::unique_ptr<RHITexture> CreateTexture() = 0;
     virtual std::unique_ptr<RHIPipeline> CreatePipeline(const PipelineDesc& desc) = 0;
     virtual std::unique_ptr<RHICommandBuffer> CreateCommandBuffer() = 0;
+    virtual std::unique_ptr<RHIRenderTarget> CreateRenderTarget(const RenderTargetDesc& desc) = 0;
 };
 
 std::unique_ptr<RHIDevice> CreateOpenGLDevice();

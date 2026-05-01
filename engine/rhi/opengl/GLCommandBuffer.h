@@ -18,6 +18,11 @@ public:
     void End() override;
     void Submit() override;
 
+    void SetRenderTarget(RHIRenderTarget* target) override;
+    void BlitToBackBuffer(RHIRenderTarget* src,
+                          int dstX, int dstY,
+                          int dstW, int dstH) override;
+
     void SetViewport(int x, int y, int width, int height) override;
     void Clear(float r, float g, float b, float a) override;
     void BindPipeline(RHIPipeline* pipeline) override;

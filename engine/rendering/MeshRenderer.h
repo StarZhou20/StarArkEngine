@@ -71,6 +71,12 @@ public:
     // 根据 spec 字段构造并赋值 mesh_ / material_。幂等。
     void ResolveResources(RHIDevice* device, ShaderManager* shaders);
 
+    // v0.3 — automatically called by SceneDoc after reflection writes finish.
+    // Pulls device + shaders from EngineBase singleton and forwards to
+    // ResolveResources(). Lets a SceneDoc::Load fully realize MeshRenderers
+    // without scene code doing the dynamic_cast walk by hand.
+    void OnReflectionLoaded() override;
+
     // --- Static registry ---
     static const std::vector<MeshRenderer*>& GetAllRenderers();
 

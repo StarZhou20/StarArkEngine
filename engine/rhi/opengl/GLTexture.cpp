@@ -69,6 +69,33 @@ void GLTexture::Bind(int unit) const {
     glBindTexture(GL_TEXTURE_2D, handle_);
 }
 
+void GLTexture::UploadEmpty(int width, int height, TextureColorFormat format) {
+    width_  = width;
+    height_ = height;
+    glBindTexture(GL_TEXTURE_2D, handle_);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    GLenum internal = GL_RGBA8;
+    GLenum upFmt    = GL_RGBA;
+    GLenum upType   = GL_UNSIGNED_BYTE;
+    switch (format) {
+        case TextureColorFormat::RGBA8_UNorm: internal = GL_RGBA8;            upFmt = GL_RGBA;            upType = GL_UNSIGNED_BYTE; break;
+        case TextureColorFormat::RGBA8_sRGB:  internal = GL_SRGB8_ALPHA8;     upFmt = GL_RGBA;            upType = GL_UNSIGNED_BYTE; break;
+        case TextureColorFormat::RGBA16F:     internal = GL_RGBA16F;          upFmt = GL_RGBA;            upType = GL_HALF_FLOAT;    break;
+        case TextureColorFormat::RG16F:       internal = GL_RG16F;            upFmt = GL_RG;              upType = GL_HALF_FLOAT;    break;
+        case TextureColorFormat::R16F:        internal = GL_R16F;             upFmt = GL_RED;             upType = GL_HALF_FLOAT;    break;
+        case TextureColorFormat::R32F:        internal = GL_R32F;             upFmt = GL_RED;             upType = GL_FLOAT;         break;
+        case TextureColorFormat::R8_UNorm:    internal = GL_R8;               upFmt = GL_RED;             upType = GL_UNSIGNED_BYTE; break;
+        case TextureColorFormat::Depth24:     internal = GL_DEPTH_COMPONENT24; upFmt = GL_DEPTH_COMPONENT; upType = GL_FLOAT;         break;
+        case TextureColorFormat::Depth32F:    internal = GL_DEPTH_COMPONENT32F;upFmt = GL_DEPTH_COMPONENT; upType = GL_FLOAT;         break;
+    }
+    glTexImage2D(GL_TEXTURE_2D, 0, internal, width, height, 0, upFmt, upType, nullptr);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
 bool GLTexture::UploadCompressed(int width, int height, CompressedFormat format,
                                  const uint8_t* data, size_t dataSize,
                                  int mipCount) {

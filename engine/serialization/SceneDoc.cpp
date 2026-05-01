@@ -4,9 +4,11 @@
 #include "engine/core/AScene.h"
 #include "engine/core/AObject.h"
 #include "engine/core/AComponent.h"
+#include "engine/core/PersistentId.h"
 #include "engine/core/Transform.h"
 #include "engine/core/TypeInfo.h"
 #include "engine/debug/DebugListenBus.h"
+#include "engine/platform/Paths.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -305,7 +307,21 @@ bool SceneDoc::LoadFromString(std::string_view text, AScene* scene,
         AObject* obj = scene->CreateObject<AObject>();
 
         if (const auto* g = ot.Find("guid"); g && g->IsString() && !g->AsString().empty()) {
-            obj->SetGuid(g->AsString());
+            const std::string& gid = g->AsString();
+            // v0.3 ModSpec §4.2 — accept persistent IDs ("<mod>:<local>"); legacy
+            // UUIDs still load but emit a one-shot deprecation WARN per file.
+            if (!IsValidPersistentId(gid)) {
+                if (IsValidLegacyUuid(gid)) {
+                    ARK_LOG_WARN("SceneDoc",
+                        "guid '" + gid + "' is a legacy UUID — please migrate to "
+                        "<mod_id>:<local_id> (v0.3 ModSpec §4.2)");
+                } else {
+                    ARK_LOG_WARN("SceneDoc",
+                        "guid '" + gid + "' is not a valid persistent ID — accepted "
+                        "as-is, but ark-validate will reject this");
+                }
+            }
+            obj->SetGuid(gid);
         }
         if (const auto* n = ot.Find("name"); n && n->IsString()) {
             obj->SetName(n->AsString());
@@ -341,6 +357,8 @@ bool SceneDoc::LoadFromString(std::string_view text, AScene* scene,
                         WriteFieldFromToml(comp, f, *v);
                     }
                 }
+                // v0.3 — translate spec → runtime resources (MeshRenderer etc.)
+                comp->OnReflectionLoaded();
                 obj->AddComponentRaw(std::move(compUp));
             }
         }
@@ -369,7 +387,264 @@ bool SceneDoc::Load(const std::filesystem::path& path, AScene* scene) {
     }
     std::ostringstream ss;
     ss << f.rdbuf();
+
+    // v0.3 ModSpec §3 — infer the mod id from the scene's filesystem location
+    // so any "./" paths inside the scene resolve under the correct mod root.
+    // Layout convention: <Mods()>/<modId>/scenes/<...>.toml.  Anything else
+    // (e.g. content-shipped scenes) loads with no mod context.
+    std::string modId;
+    std::error_code ec;
+    auto absScene = std::filesystem::weakly_canonical(path, ec);
+    auto absMods  = std::filesystem::weakly_canonical(Paths::Mods(), ec);
+    if (!ec) {
+        auto rel = std::filesystem::relative(absScene, absMods, ec);
+        if (!ec && !rel.empty() && rel.begin() != rel.end()) {
+            const std::string first = rel.begin()->string();
+            if (!first.empty() && first != ".." && first != ".") {
+                modId = first;
+            }
+        }
+    }
+
+    if (!modId.empty()) {
+        Paths::ModContextScope scope(modId);
+        return LoadFromString(ss.str(), scene);
+    }
     return LoadFromString(ss.str(), scene);
+}
+
+// =============================================================================
+// v0.3 ModSpec §5 — Addon scene overlay
+// =============================================================================
+
+namespace {
+
+// Find an AObject by guid in a scene's object list. Linear scan: scenes are
+// small (≤ a few hundred objects in v0.3) and overlays apply once at load.
+AObject* FindByGuid(AScene* scene, const std::string& guid) {
+    if (!scene || guid.empty()) return nullptr;
+    for (auto& up : scene->GetObjectList()) {
+        AObject* obj = up.get();
+        if (!obj || obj->IsDestroyed()) continue;
+        if (obj->GetGuid() == guid) return obj;
+    }
+    return nullptr;
+}
+
+// Find a component of the given reflected type name on an object.
+AComponent* FindComponentByType(AObject* obj, const std::string& typeName) {
+    if (!obj) return nullptr;
+    for (auto& cup : obj->GetComponents()) {
+        AComponent* c = cup.get();
+        if (!c) continue;
+        if (c->GetReflectTypeName() == typeName) return c;
+    }
+    return nullptr;
+}
+
+// Apply only the keys present in `tbl` that match a reflected field of `comp`.
+// Unknown keys are silently ignored (typical TOML extras like target_guid /
+// component_type are filtered by the caller before getting here).
+void ApplyReflectedFields(AComponent* comp, const TypeInfo& ti, const TomlTable& tbl) {
+    for (const auto& f : ti.fields) {
+        if (const TomlValue* v = tbl.Find(f.name)) {
+            WriteFieldFromToml(comp, f, *v);
+        }
+    }
+}
+
+// Build a brand-new AObject from a [[additions]] table — same layout as
+// [[objects]] in the base scene file. Returns the new object (already added
+// to the scene) or nullptr on hard failure (ignored for additions).
+AObject* BuildObjectFromTable(AScene* scene, const TomlTable& ot) {
+    AObject* obj = scene->CreateObject<AObject>();
+    if (const auto* g = ot.Find("guid"); g && g->IsString() && !g->AsString().empty()) {
+        obj->SetGuid(g->AsString());
+    }
+    if (const auto* n = ot.Find("name"); n && n->IsString()) {
+        obj->SetName(n->AsString());
+    }
+    if (const auto* trTbl = ot.FindTable("transform")) {
+        ApplyTransformFromTable(obj, *trTbl);
+    }
+    if (const auto* compsAot = ot.FindArrayOfTables("components")) {
+        for (std::size_t j = 0; j < compsAot->Size(); ++j) {
+            const TomlTable& ct = (*compsAot)[j];
+            const auto* ty = ct.Find("type");
+            if (!ty || !ty->IsString()) continue;
+            const TypeInfo* ti = TypeRegistry::Get().Find(ty->AsString());
+            if (!ti || !ti->factory) {
+                ARK_LOG_WARN("SceneOverlay",
+                    std::string("addition: unknown component type '") + ty->AsString() + "'");
+                continue;
+            }
+            auto compUp = ti->factory();
+            AComponent* comp = compUp.get();
+            if (!comp) continue;
+            ApplyReflectedFields(comp, *ti, ct);
+            comp->OnReflectionLoaded();
+            obj->AddComponentRaw(std::move(compUp));
+        }
+    }
+    return obj;
+}
+
+} // anonymous namespace
+
+bool SceneDoc::ApplyOverlayFromString(std::string_view text, AScene* scene,
+                                      std::string* errorMsg) {
+    if (!scene) {
+        if (errorMsg) *errorMsg = "scene is null";
+        return false;
+    }
+
+    std::string err;
+    int errLine = 0;
+    auto parsed = TomlDoc::Parse(text, &err, &errLine);
+    if (!parsed) {
+        if (errorMsg) {
+            *errorMsg = "TOML parse error at line " + std::to_string(errLine)
+                        + ": " + err;
+        }
+        return false;
+    }
+    const TomlTable& root = parsed->Root();
+
+    // Schema version gate (lenient: missing [overlay] is allowed for now).
+    if (const auto* ovTbl = root.FindTable("overlay")) {
+        if (const auto* sv = ovTbl->Find("schema_version"); sv && sv->IsInt()) {
+            if (sv->AsInt() != 1) {
+                if (errorMsg) *errorMsg = "unsupported overlay.schema_version="
+                                          + std::to_string(sv->AsInt());
+                return false;
+            }
+        }
+    }
+
+    int countDel = 0, countOv = 0, countAtt = 0, countAdd = 0;
+
+    // ---- 1) deletions -----------------------------------------------------
+    if (const auto* aot = root.FindArrayOfTables("deletions")) {
+        for (std::size_t i = 0; i < aot->Size(); ++i) {
+            const TomlTable& row = (*aot)[i];
+            const auto* tg = row.Find("target_guid");
+            if (!tg || !tg->IsString() || tg->AsString().empty()) {
+                ARK_LOG_WARN("SceneOverlay", "deletions[" + std::to_string(i)
+                             + "] missing target_guid");
+                continue;
+            }
+            AObject* obj = FindByGuid(scene, tg->AsString());
+            if (!obj) {
+                ARK_LOG_WARN("SceneOverlay", "deletions: target_guid '"
+                             + tg->AsString() + "' not found");
+                continue;
+            }
+            obj->Destroy();
+            ++countDel;
+        }
+    }
+
+    // ---- 2) overrides -----------------------------------------------------
+    if (const auto* aot = root.FindArrayOfTables("overrides")) {
+        for (std::size_t i = 0; i < aot->Size(); ++i) {
+            const TomlTable& row = (*aot)[i];
+            const auto* tg = row.Find("target_guid");
+            const auto* ct = row.Find("component_type");
+            if (!tg || !tg->IsString() || tg->AsString().empty()
+                || !ct || !ct->IsString() || ct->AsString().empty()) {
+                ARK_LOG_WARN("SceneOverlay", "overrides[" + std::to_string(i)
+                             + "] missing target_guid / component_type");
+                continue;
+            }
+            AObject* obj = FindByGuid(scene, tg->AsString());
+            if (!obj) {
+                ARK_LOG_WARN("SceneOverlay", "overrides: target_guid '"
+                             + tg->AsString() + "' not found");
+                continue;
+            }
+            AComponent* comp = FindComponentByType(obj, ct->AsString());
+            if (!comp) {
+                ARK_LOG_WARN("SceneOverlay", "overrides: component_type '"
+                             + ct->AsString() + "' not on object '" + tg->AsString() + "'");
+                continue;
+            }
+            const TypeInfo* ti = TypeRegistry::Get().Find(ct->AsString());
+            if (!ti) continue;
+            ApplyReflectedFields(comp, *ti, row);
+            comp->OnReflectionLoaded();
+            ++countOv;
+        }
+    }
+
+    // ---- 3) components_attached ------------------------------------------
+    if (const auto* aot = root.FindArrayOfTables("components_attached")) {
+        for (std::size_t i = 0; i < aot->Size(); ++i) {
+            const TomlTable& row = (*aot)[i];
+            const auto* tg = row.Find("target_guid");
+            const auto* ty = row.Find("type");
+            if (!tg || !tg->IsString() || tg->AsString().empty()
+                || !ty || !ty->IsString() || ty->AsString().empty()) {
+                ARK_LOG_WARN("SceneOverlay", "components_attached["
+                             + std::to_string(i)
+                             + "] missing target_guid / type");
+                continue;
+            }
+            AObject* obj = FindByGuid(scene, tg->AsString());
+            if (!obj) {
+                ARK_LOG_WARN("SceneOverlay", "components_attached: target_guid '"
+                             + tg->AsString() + "' not found");
+                continue;
+            }
+            const TypeInfo* ti = TypeRegistry::Get().Find(ty->AsString());
+            if (!ti || !ti->factory) {
+                ARK_LOG_WARN("SceneOverlay",
+                    "components_attached: unknown type '" + ty->AsString() + "'");
+                continue;
+            }
+            auto compUp = ti->factory();
+            AComponent* comp = compUp.get();
+            if (!comp) continue;
+            ApplyReflectedFields(comp, *ti, row);
+            comp->OnReflectionLoaded();
+            obj->AddComponentRaw(std::move(compUp));
+            ++countAtt;
+        }
+    }
+
+    // ---- 4) additions -----------------------------------------------------
+    if (const auto* aot = root.FindArrayOfTables("additions")) {
+        for (std::size_t i = 0; i < aot->Size(); ++i) {
+            const TomlTable& row = (*aot)[i];
+            if (BuildObjectFromTable(scene, row)) ++countAdd;
+        }
+    }
+
+    ARK_LOG_INFO("SceneOverlay",
+        "applied: deletions=" + std::to_string(countDel)
+        + " overrides=" + std::to_string(countOv)
+        + " components_attached=" + std::to_string(countAtt)
+        + " additions=" + std::to_string(countAdd));
+
+    return true;
+}
+
+bool SceneDoc::ApplyOverlay(const std::filesystem::path& path, AScene* scene) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) {
+        ARK_LOG_ERROR("SceneOverlay",
+            std::string("ApplyOverlay: cannot open ") + path.string());
+        return false;
+    }
+    std::stringstream ss;
+    ss << f.rdbuf();
+
+    std::string err;
+    bool ok = ApplyOverlayFromString(ss.str(), scene, &err);
+    if (!ok) {
+        ARK_LOG_ERROR("SceneOverlay",
+            std::string("ApplyOverlay '") + path.string() + "': " + err);
+    }
+    return ok;
 }
 
 } // namespace ark

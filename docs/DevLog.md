@@ -1,11 +1,117 @@
 # StarArk 工程开发日志 (DevLog)
 
 > **用途**: 供 AI 编码助手阅读，快速了解项目当前状态、已完成内容、待办事项和技术约束。  
-> **最后更新**: 2026-04-25（15.F.3 完成 — MOD 可改世界）
+> **最后更新**: 2026-04-26（v0.3 ModSpec 主路径全部落地 — §2/§3/§4.2/§5/§6.1/§6.2，详见 [ModSpec.md 附录 D](ModSpec.md)）
+
+## 工程级硬性约定（开发顺序之外的红线）
+
+以下两条**未接到作者明确通知前不变**，AI 助手与外部贡献者一律遵守：
+
+1. **🔴 不要把引擎打包为 DLL**。当前 `StarArkEngine` 是 **静态库**（`add_library(... STATIC)`），
+   `game/` 与 `samples/` 直接静态链接。渲染层/RHI/反射 在 v0.3 期内会持续微调（Material sidecar 拆分、
+   ScriptApi v3、ECS system 注册等），二进制接口尚未稳定，过早做 DLL 边界会强迫每次改动都做
+   ABI/导出符号兼容修补，得不偿失。**ModSpec §0 中"StarArkEngine.dll"是远期目标**，v0.3/v0.4 期内
+   不要触发任何 `BUILD_SHARED_LIBS=ON` / `__declspec(dllexport)` / `.def` 文件相关改动。
+
+2. **🔴 玩家启动器使用 WPF 实现**，不用 ImGui / Win32 / Avalonia / web frontend。
+   理由：WPF 与现有 Lighting Tuner / 计划中的 Object Inspector（ModSpec §7.2）共享同一前端栈，
+   可以共用反射 schema + DataBinding 模式，且 WPF 在 .NET 10 下的设计自由度（XAML / 矢量 / 主题）
+   远超 ImGui。启动器项目预期落在 `tools/Launcher/`（与 `tools/LightingTuner/` 同级），
+   通过 CLI 启动引擎二进制，不嵌入 CoreCLR。
+
 
 ---
 
-## 0. 当前里程碑：v0.2-data-contract（**开发中**）
+## 0. 当前里程碑：v0.3-modspec（**主路径全部落地，e2e 验证完成**）
+
+> v0.3 ModSpec 实现状态以 [ModSpec.md 附录 D](ModSpec.md) 为单一真相来源。本节给出"接手者第一眼"摘要。
+
+**v0.3 已落（全部在 main 分支可验证，build EXIT=0，四种 smoke stderr=0）：**
+
+| 节 | 主题 | 关键产物 |
+|---|---|---|
+| §2 | mod.toml schema v1 | `engine/mod/ModInfo.{h,cpp}`（含 depends_on / applies_to） |
+| §3 | 三轨路径 `./` / `mod://` / `engine://` | `engine/platform/Paths.cpp` |
+| §4.2 | 持久 ID `<mod>:<local>` | `engine/core/PersistentId.{h,cpp}` + 启动期自检 |
+| §5 | addon scene overlay | `SceneDoc::ApplyOverlay*`，F6 / `ARK_AUTO_OVERLAY=1` 触发 |
+| §6.1 | 存档 header + sidecar scene + F5/F9 | `engine/save/SaveHeader.{h,cpp}` + `EngineBase::HandleQuicksave/Quickload` |
+| §6.2 | registry schema_hash | `engine/util/Sha256.{h,cpp}` + `engine/core/SchemaHash.{h,cpp}` + 启动期 4 路负向自检 |
+| chore | 反射后置钩子 `OnReflectionLoaded` | `AComponent.h` + `MeshRenderer::OnReflectionLoaded`，删 `resolveAll` |
+| chore | cottage 场景全部走 persistent ID | `samples/content/scenes/cottage.toml` 8 个对象 |
+
+**v0.3 仍未做（v0.3.x / v0.4 候选）：**
+
+- ark-validate CLI（§4.2 ID 漂移离线检测）
+- §5 additions / deletions / components_attached 端到端实测（overrides 已实测）
+- §6.1 save scope = full ECS 状态（当前只 dump scene）
+- §6.3 缺失 mod 时的 quickload 玩家询问 UX
+- §7.4 pipeline-specific shader 路径
+- §15 ScriptApi v3（暴露 quicksave / Camera / Component 反射）
+- 附录 A：Material sidecar 拆分；`samples/content/cottage` 迁到 `mods/vanilla/`
+
+---
+
+### 🔖 下一步开工锚点（2026-04-28）
+
+**目标**：把混乱的 `samples/` 收敛为"一个真正的 mod-first 游戏样例" + 启动器选 mod。
+
+**待办（按依赖序）**：
+
+1. **资产迁移**（C++ 几乎不动）— 把现存三种内置场景拆成三个 game-type mod 文件夹：
+   - `samples/mods/vanilla/`   ← 原 cottage（`samples/content/scenes/cottage.toml` + 引用的贴图/mesh 全部移入）
+   - `samples/mods/bistro/`    ← 原 FBXDemoScene 的硬编码场景，导出为 `scenes/bistro.toml`（不能再用 C++ class 写死）
+   - `samples/mods/demo/`      ← 原 PBR DemoScene 同上
+   - 每个目录加 `mod.toml`（`type="game"`），`samples/content/` 清空或仅留 engine fallback
+   - `samples/mods/hellomod/`（addon）保留，`applies_to=["vanilla"]`
+
+2. **可加载 game-mod 的引擎入口**（C++ 改动主要点）：
+   - `EngineBase` 暴露 `RunGameMod(mod_id, addon_ids)`：内部走 `ModInfo::Load → 路径上下文 → SceneDoc::Load(scenes/main.toml) → 应用 addon overlays`
+   - 删 `CottageScene` / `FBXDemoScene` / `DemoScene` 三个 C++ 类（场景渲染逻辑 100% TOML 驱动后已无意义）
+   - `StarArkSamples.exe` 改为 `--game=<id> [--addon=<id>...]`，无参时进入"启动器外部唤起"模式
+
+3. **WPF 启动器**（`tools/Launcher/`，独立 .NET 10 项目，参考 `tools/LightingTuner`）：
+   - 扫描 `samples/mods/`，解析所有 `mod.toml`
+   - 左侧列表：所有 `type="game"` mod，单选
+   - 右侧列表：所有 `type="addon"` 且 `applies_to` 含选中 game 的 mod，多选
+   - 校验 `engine_min` / `script_api_min` / `supported_pipelines`（与 ModSpec §2.2 一致）
+   - "启动" 按钮 → `Process.Start("StarArkSamples.exe --game=vanilla --addon=hellomod")`
+   - 引擎二进制独立 .exe 进程，启动器不嵌入 CoreCLR（ModSpec §0 红线）
+
+4. **smoke 4 模更新**：从 `cottage` 位置参数改为 `--game=vanilla` / `--game=bistro` / `--game=vanilla --addon=hellomod`。
+
+**预期收益**：
+- 三个 game-mod 是引擎自身"吃自己狗粮"最强的回归用例（任何 mod 加载/反射/路径 bug 立刻暴露）
+- ModSpec §1.1（一个 mod 文件夹 = 一个完整游戏）首次端到端验证
+- 部分覆盖 ModSpec 附录 A（Material sidecar 之外的迁移工作）
+
+**风险**：
+- Bistro FBX 场景目前是 C++ 代码硬编码相机/灯光/导入 FBX，导出为 TOML 需要先确认 `MeshRenderer` 字段够用、灯光/相机能完整序列化
+- WPF .NET 10 SDK 需要确认开发机已装（Lighting Tuner 已经在用，应该没问题）
+
+**完成判据**：
+- 启动器双击能选 vanilla/bistro/demo + hellomod 任意组合启动，画面正常
+- `samples/content/` 不再有 scene/mesh 资产
+- 4 模 smoke stderr=0 + cottage+overlay 仍输出 `applied: deletions=1 overrides=2 components_attached=1 additions=1`
+
+---
+
+**给下次接手 AI 的最短路径：**
+
+1. 看 [ModSpec.md 附录 D](ModSpec.md) 知道 v0.3 实现侧每节状态。
+2. 看 `/memories/repo/v0.2-progress.md` 知道每轮（Round 8–24）的具体改动 + 踩坑。
+3. 验证当前状态：`cd D:\Code\StarArkEngine; cmd /c tmp\build.bat *>build_log.txt 2>&1`，预期 EXIT=0；
+   `cd build\samples; .\StarArkSamples.exe` 预期 stderr=0；
+   `$env:ARK_AUTO_OVERLAY='1'; .\StarArkSamples.exe cottage` 预期日志含 `applied: overrides=2`。
+4. 想继续 v0.3 收尾就从"v0.3 仍未做"清单挑一项；想做新功能就走 [Roadmap.md](Roadmap.md) Phase 16+。
+
+---
+
+## 0.0 上个里程碑：v0.2-data-contract（**已收尾**），承前启后
+
+> **v0.3 起 mod 范式由 [ModSpec.md](ModSpec.md) 全权定义**（自包含 mod 文件夹 / mod.toml schema / 三轨路径 / 双层身份 / 字段级覆盖 / ECS 优先 / ScriptApi v3 等）。
+> v0.2 现有实现（`mods://` 单前缀、UUID GUID、inline material、`load_order.toml`）将按 ModSpec 附录 A 清单迁移。
+
+
 
 **目标定位**: 把引擎从"API 驱动的 PBR 后端"升级为"**数据契约驱动的 MOD 基础**"。
 对标 Skyrim/Creation Engine 的 MOD 生态基础（ESP/ESM record override + load order + 资源路径覆盖），
@@ -509,10 +615,88 @@ StarArk/
 - `HelloMod` 升级演示：F1 spawn `"HelloMod.Marker"` → 在 origin 周围半径 3、周期 4s 圆周运动；F2 destroy；F3 print pos + 找 `MainCamera`
 - 实测：`[INFO] [HelloMod] OnLoad. Active scene = ''. F1=spawn  F2=destroy  F3=print` —— 注意 `OnLoad` 在 `DiscoverAndLoadMods` 时 fire，此时 active scene 还没 activate，符合预期
 
-#### 15.F 后续候选（未做）
-- **15.F.4 MOD 热重载**：ALC 已 collectible，加 `FileSystemWatcher` → `Unload()` 旧 ALC → 重新 `LoadFromAssemblyPath`；MOD 状态需 mod 自己持久化（可提供 `IMod.SaveState/LoadState`）
-- **15.F.5 mod.toml**：每个 MOD 一个 `mod.toml`（id/name/version/depends/load_after）；`<gameRoot>/mods/load_order.toml` 已用作启用列表，但还没真正按依赖排序
-- **15.F.6 ScriptApi v3**：暴露 Camera 控制（GetActiveCameraHandle / SetCameraTransform / SetFovY）+ Component 反射访问（`AddComponent(handle, typeName)` / `GetComponentField(handle, typeName, fieldName)`，复用 15.A 反射）
+#### 15.F 后续候选
+
+- **15.F.4 MOD 热重载（v0.2.x 内可做）**：ALC 已 collectible，加 `FileSystemWatcher` → `Unload()` 旧 ALC → 重新 `LoadFromAssemblyPath`；MOD 状态需 mod 自己持久化（可提供 `IMod.SaveState/LoadState`）
+- ~~**15.F.5 mod.toml**~~ → 升级为 **v0.3 ModSpec §2** 的全量规范（schema_version / supported_pipelines / depends_on 拓扑排序 / script_api_min 校验）
+- ~~**15.F.6 ScriptApi v3**~~ → 升级为 **v0.3 ModSpec §15** 的全量规划（数据组件反射注册 + ScriptComponent + 旋转/层级访问 + Camera 控制 + 主线程契约）
+
+> **v0.3 主线由 [ModSpec.md](ModSpec.md) 驱动**，迁移清单见 ModSpec 附录 A。15.F.5/.6 的旧规划被 ModSpec 接管，本节不再单独跟踪。
+
+---
+
+### Phase 15.G.1: Paths 三轨路径语法（v0.3 ModSpec §3 第一步，2026-04-26）
+
+- **动机**：ModSpec §3 要求 mod 资产引用必须显式带 scheme 前缀（`./` / `mod://<id>/` / `engine://`），且解析时需知道"当前 mod"。从最小、向后兼容的一刀切下，所有后续迁移（Material sidecar / vanilla 重构 / GUID 字符串化）都要这把钥匙。
+- **改动文件**：仅 [engine/platform/Paths.h](../engine/platform/Paths.h) + [engine/platform/Paths.cpp](../engine/platform/Paths.cpp)
+- **新增 API**：
+  - `Paths::ResolveResource(logical, currentModId)` — 双参重载，识别三种 scheme：
+    - `"./<rest>"`           → `Mods()/<currentModId>/<rest>`
+    - `"mod://<id>/<rest>"`  → `Mods()/<id>/<rest>`
+    - `"engine://<rest>"`    → `Content()/<rest>`（不可被 mod 覆盖）
+    - 裸路径（兼容 v0.2）   → 旧 `load_order.toml` 栈遍历 + 一次性 deprecation WARN
+  - `Paths::ModContextScope` — RAII，进入/离开当前 mod 作用域
+  - `Paths::PushCurrentModId / PopCurrentModId / GetCurrentModId` — 线程本地栈底层 API
+- **零侵入兼容**：旧的 `ResolveResource(logical)` 单参重载被改写为 `ResolveResource(logical, GetCurrentModId())`，所以 `TextureLoader` / `ModelLoader` / `MeshRenderer::ResolveResources` 完全不动；只要外层 SceneDoc::Load 之类的入口包一层 `Paths::ModContextScope scope("vanilla");`，downstream 自动获得 mod 上下文。
+- **绝对路径 fast-path**：`fs::path(logical).is_absolute()` 时直接返还，**不告警 / 不走 VFS**。这避免 Bistro 等"用户在 scene 代码里直接传绝对路径"场景被误标 deprecated。
+- **失败时**（按 ModSpec §3 失败语义草案，本期未强制 reject）：
+  - 裸路径 → WARN 一次后回落旧行为；正式 reject 留到 v0.3 vanilla mod 重构后
+  - `mod://<id>/<rest>` 但 id 不存在 → 返回 `Mods()/<id>/<rest>` 不存在路径，由 caller 报失败
+  - `"./"` 无 mod ctx → fallback Content() + 一次性 WARN
+- **验证**：full build green；StarArkSamples（含 Bistro+Cottage 双场景）启动 stderr=0 行，全部贴图/模型加载日志正常。
+- **下一步**：在 `SceneDoc::Load(toml_path)` 入口套 `ModContextScope`（推断 mod_id 自 toml 路径），然后把 `cottage.toml` 里的 `tex_albedo = "textures/ground.png"` 改写为 `"./textures/ground.png"`，端到端验证三轨语法。
+
+---
+
+### 下轮开工锚点：延迟渲染管线（2026-04-26 作者决策）
+
+v0.3 ModSpec 迁移中场休息。**下一次开工不继续 ModSpec §4/§7.3/§1**，而是优先推进**延迟渲染管线**——这是"多点光源 + 后期深化 PBR"的前提，是顶上限制业务表现力的头号阶段任务。ModSpec 迁移可在 deferred 推进期间作为支线穿插。
+
+**入口**：[Roadmap.md "延迟渲染前置工作清单"](Roadmap.md)。9 项前置阻挡按下面顺序执行（已按依赖排好）：
+
+1. **Shader 双源治理**（disk 为唯一真值，CMake 生成嵌入头）— 不先做这步，后续每加一个 G-Buffer/Lighting 着色器都要改两份
+2. **清理 `pbr.frag` 末尾 RED/GREEN 调试残留**（[tech-debt](../memories/repo/tech-debt.md) 已记）
+3. **RHI `RenderTarget` 抽象**（`RHIDevice::CreateRenderTarget`；把现有 IBL/PostProcess/ShadowMap 的 20+ 处 raw `glGenFramebuffers` 迁过来）
+4. **RHI MRT 支持**（`PipelineDesc.colorAttachments[]` + `CommandBuffer::SetRenderTarget` / `BlitToBackBuffer`）
+5. **`RHITexture` 格式扩展**（`RGBA16F` / `RG16F` / `R32F` / `Depth32F` 等 RT 必备格式 + `UploadEmpty`）
+6. **Material 多 shader 槽**（按 pass 查 shader：`gbuffer` / `forward` / `shadow` / `transparent`，缺失自动降级）
+7. **Material RenderQueue + `IsTransparent()`**（deferred 只渲染 Opaque/AlphaTest，Transparent 走旁路 forward）
+8. **抽 `CollectOpaqueDrawList(camera)`**（DeferredRenderer / ForwardRenderer 共用）
+9. **G-Buffer + Lighting Pass 着色器**（`gbuffer.vert/frag` 写 4 个 RT；`lighting.frag` 全屏 pass 从深度重建 worldPos）
+
+**最终骨架**：新建 `engine/rendering/DeferredRenderer.{h,cpp}`；`RenderSettings` 加 `pipeline = forward | deferred` 运行时开关；`ForwardRenderer` 保留作为 transparent / sky / UI overlay 通道。
+
+**不在本阶段做**（明确推后）：
+- Mod 自定义渲染管线 / 后处理链扩展点（昨天讨论结论：不开放完整 SRP；做完 deferred 后另起 Phase 实现"后处理 + shader override + 渲染钩子"三件套）
+- Tile/Cluster 多光源剔除
+- DX12 / Vulkan 后端
+- 多线程命令录制
+
+**进入 deferred 实现前必须确认**：build green、StarArkSamples（Bistro+Cottage）烟测 stderr=0 行（当前已满足）。
+
+---
+
+### Phase R9: Deferred Pipeline ✅（2026-04-26 完结）
+
+> **代号**：Roadmap #9。9 项前置阻挡 + 出口验收全部完成。详细日志见 `/memories/repo/v0.2-progress.md` 阶段 A→G4。
+
+**最终架构**
+- `RenderSettings::pipeline = Forward | Deferred`，配置来源优先级：`game.config.json::pipeline` < `ARK_PIPELINE` env（debug override）。
+- Forward 路径不变；Deferred 路径骨架：
+  1. `DrawListBuilder::CollectOpaqueDrawList` → 不透明渲染体进 `DeferredRenderer::Render`
+  2. G-buffer pass：4 RT（RGBA8 albedo+metallic / RGBA16F worldN+roughness / RGBA16F emissive+motion / RGBA8 ao+flags）+ Depth32F；`Material::BindToShader(gbufferShader)` 显式喂参
+  3. Lighting pass：fullscreen triangle (gl_VertexID, 无 VBO)；`lighting.frag` 采 4 G-buffer + Depth32F，重建 worldPos via `uInvViewProj`，跑完整 Cook-Torrance + PCF Shadow + IBL（irradiance + prefilter + envBRDF），写 linear HDR 到 `lit_`
+  4. Stage F transparent overlay：`BlitGBufferDepthToLit` 把 gbuffer 深度 blit 到 lit_ 的 Depth32F renderbuffer；`CollectTransparentDrawList` 按 camera distance 平方 back-to-front 排序；用 forward pbr shader 渲到 lit_（depthTest=on, depthWrite=off, blend=src_alpha/one_minus）
+  5. PostProcess ingest：`IngestHDRColor(lit_color, w, h, gbuffer_depth)` 同时把颜色和深度 blit 进 hdrFBO_，让 SSAO/Fog/SSR/ContactShadow/TAA 全部跑得起来；`Apply(...)` 完成 bloom/exposure/ACES/FXAA composite
+
+**关键工程取舍**
+- Material 多 shader 槽未做"shader by pass"完整方案，而是直接 `Material::BindToShader(RHIShader*)` 由 renderer 显式选 shader（gbuffer / pbr）；轻量足够。
+- TAA 复用 forward 的 depth-based reprojection（`uPrevViewProj * worldP` 投回上一帧 UV），不需要显式 motion vector RT；emissive RT.alpha 槽位预留作 v0.3 高质量 motion blur / disocclusion mask 扩展。
+- IBL/PostProcess 内部 19 处 raw `glGenFramebuffers` 未迁；ShadowMap 已迁。剩下 follow-up 不阻塞 deferred 落地，挂 `/memories/repo/tech-debt.md`。
+
+**验证**：build green，forward 与 `ARK_PIPELINE=deferred` 烟测均 stderr=0；StarArkGame `game.config.json::pipeline` "forward"/"deferred" 切换均通过；Bistro 在 deferred 路径 IBL/Shadow/Bloom/SSAO 视觉无回归（plumbing 全部就位）。
+
+**Roadmap #9 关单**。下一步开工：v0.3 ModSpec 主线 / 编辑器 / 后处理 mod 钩子 等长线议程。
 
 ---
 

@@ -1,5 +1,7 @@
 #include "PostProcess.h"
 #include "engine/debug/DebugListenBus.h"
+#include "engine/rhi/RHIDevice.h"
+#include "engine/rhi/RHIRenderTarget.h"
 
 #include <GL/glew.h>
 #include <cstdio>
@@ -678,7 +680,8 @@ PostProcess::PostProcess() = default;
 PostProcess::~PostProcess() {
     ReleaseTargets();
     ReleasePrograms();
-    if (ssaoNoiseTex_) { glDeleteTextures(1, &ssaoNoiseTex_); ssaoNoiseTex_ = 0; }
+    if (ssaoNoiseTex_)   { glDeleteTextures(1, &ssaoNoiseTex_); ssaoNoiseTex_ = 0; }
+    if (ingestTmpFBO_)   { glDeleteFramebuffers(1, &ingestTmpFBO_); ingestTmpFBO_ = 0; }
     if (fsVBO_) glDeleteBuffers(1, &fsVBO_);
     if (fsVAO_) glDeleteVertexArrays(1, &fsVAO_);
 }
@@ -719,31 +722,71 @@ void PostProcess::AllocTargets(int w, int h) {
     width_ = w;
     height_ = h;
 
+    // ---- Helper: allocate a single-color RT via the RHI and copy its
+    //      native handles into the legacy raw-GL fields (downstream code
+    //      still binds via those). Returns false if no device is set.
+    auto AllocRT = [&](std::unique_ptr<RHIRenderTarget>& slot,
+                       int rw, int rh,
+                       RTColorFormat colorFmt,
+                       bool wantDepthTex,
+                       const char* tag) -> bool {
+        if (!device_) return false;
+        RenderTargetDesc d;
+        d.width  = rw;
+        d.height = rh;
+        RTColorAttachmentDesc c;
+        c.format = colorFmt;
+        d.colors.push_back(c);
+        if (wantDepthTex) {
+            d.depth.format        = RTDepthFormat::Depth24;
+            d.depth.renderbuffer  = false;
+            d.depth.shadowSampler = false;
+        }
+        slot = device_->CreateRenderTarget(d);
+        if (!slot) {
+            ARK_LOG_ERROR("Render", std::string("PostProcess: ") + tag +
+                                     " RT allocation failed");
+            return false;
+        }
+        return true;
+    };
+
     // HDR scene FBO: RGBA16F color + depth **texture** (sampleable for SSAO).
-    glGenFramebuffers(1, &hdrFBO_);
-    glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO_);
-
-    glGenTextures(1, &hdrColor_);
-    glBindTexture(GL_TEXTURE_2D, hdrColor_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hdrColor_, 0);
-
-    glGenTextures(1, &hdrDepth_);
-    glBindTexture(GL_TEXTURE_2D, hdrDepth_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, w, h, 0,
-                 GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, hdrDepth_, 0);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        ARK_LOG_ERROR("Render", "PostProcess: HDR FBO incomplete");
+    if (AllocRT(rtHdr_, w, h, RTColorFormat::RGBA16F, /*depth*/true, "HDR")) {
+        hdrFBO_   = rtHdr_->GetNativeFramebufferHandle();
+        hdrColor_ = rtHdr_->GetColorTextureHandle(0);
+        hdrDepth_ = rtHdr_->GetDepthTextureHandle();
+        // Depth texture defaults to LINEAR filter in GLRenderTarget; some
+        // legacy SSAO code paths use textureFetch / NEAREST. Override.
+        glBindTexture(GL_TEXTURE_2D, hdrDepth_);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    } else {
+        // Fallback: raw GL (kept for safety, exercised when SetDevice was
+        // not called).
+        glGenFramebuffers(1, &hdrFBO_);
+        glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO_);
+        glGenTextures(1, &hdrColor_);
+        glBindTexture(GL_TEXTURE_2D, hdrColor_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hdrColor_, 0);
+        glGenTextures(1, &hdrDepth_);
+        glBindTexture(GL_TEXTURE_2D, hdrDepth_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, w, h, 0,
+                     GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, hdrDepth_, 0);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            ARK_LOG_ERROR("Render", "PostProcess: HDR FBO incomplete");
+        }
     }
 
     // Optional multisample HDR target — scene renders here, we resolve into
@@ -783,74 +826,92 @@ void PostProcess::AllocTargets(int w, int h) {
     const int bw = w / 2 > 0 ? w / 2 : 1;
     const int bh = h / 2 > 0 ? h / 2 : 1;
     for (int i = 0; i < 2; ++i) {
-        glGenFramebuffers(1, &bloomFBO_[i]);
-        glBindFramebuffer(GL_FRAMEBUFFER, bloomFBO_[i]);
-
-        glGenTextures(1, &bloomColor_[i]);
-        glBindTexture(GL_TEXTURE_2D, bloomColor_[i]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, bw, bh, 0, GL_RGBA, GL_FLOAT, nullptr);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, bloomColor_[i], 0);
-
-        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-            ARK_LOG_ERROR("Render",
-                std::string("PostProcess: bloom FBO[") + std::to_string(i) + "] incomplete");
+        if (AllocRT(rtBloom_[i], bw, bh, RTColorFormat::RGBA16F, /*depth*/false,
+                    "bloom")) {
+            bloomFBO_[i]   = rtBloom_[i]->GetNativeFramebufferHandle();
+            bloomColor_[i] = rtBloom_[i]->GetColorTextureHandle(0);
+        } else {
+            glGenFramebuffers(1, &bloomFBO_[i]);
+            glBindFramebuffer(GL_FRAMEBUFFER, bloomFBO_[i]);
+            glGenTextures(1, &bloomColor_[i]);
+            glBindTexture(GL_TEXTURE_2D, bloomColor_[i]);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, bw, bh, 0, GL_RGBA, GL_FLOAT, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, bloomColor_[i], 0);
+            if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+                ARK_LOG_ERROR("Render",
+                    std::string("PostProcess: bloom FBO[") + std::to_string(i) + "] incomplete");
+            }
         }
     }
 
     // SSAO ping-pong (full-res, single-channel R8). [0]=raw, [1]=blurred.
     for (int i = 0; i < 2; ++i) {
-        glGenFramebuffers(1, &ssaoFBO_[i]);
-        glBindFramebuffer(GL_FRAMEBUFFER, ssaoFBO_[i]);
+        if (AllocRT(rtSsao_[i], w, h, RTColorFormat::R8_UNorm, /*depth*/false,
+                    "SSAO")) {
+            ssaoFBO_[i]   = rtSsao_[i]->GetNativeFramebufferHandle();
+            ssaoColor_[i] = rtSsao_[i]->GetColorTextureHandle(0);
+        } else {
+            glGenFramebuffers(1, &ssaoFBO_[i]);
+            glBindFramebuffer(GL_FRAMEBUFFER, ssaoFBO_[i]);
+            glGenTextures(1, &ssaoColor_[i]);
+            glBindTexture(GL_TEXTURE_2D, ssaoColor_[i]);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ssaoColor_[i], 0);
+            if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+                ARK_LOG_ERROR("Render",
+                    std::string("PostProcess: SSAO FBO[") + std::to_string(i) + "] incomplete");
+            }
+        }
+    }
 
-        glGenTextures(1, &ssaoColor_[i]);
-        glBindTexture(GL_TEXTURE_2D, ssaoColor_[i]);
+    // Contact shadow target (full-res R8).
+    if (AllocRT(rtContact_, w, h, RTColorFormat::R8_UNorm, /*depth*/false, "contact")) {
+        contactFBO_ = rtContact_->GetNativeFramebufferHandle();
+        contactTex_ = rtContact_->GetColorTextureHandle(0);
+    } else {
+        glGenFramebuffers(1, &contactFBO_);
+        glBindFramebuffer(GL_FRAMEBUFFER, contactFBO_);
+        glGenTextures(1, &contactTex_);
+        glBindTexture(GL_TEXTURE_2D, contactTex_);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ssaoColor_[i], 0);
-
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, contactTex_, 0);
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-            ARK_LOG_ERROR("Render",
-                std::string("PostProcess: SSAO FBO[") + std::to_string(i) + "] incomplete");
+            ARK_LOG_ERROR("Render", "PostProcess: contact shadow FBO incomplete");
         }
-    }
-
-    // Contact shadow target (full-res R8).
-    glGenFramebuffers(1, &contactFBO_);
-    glBindFramebuffer(GL_FRAMEBUFFER, contactFBO_);
-    glGenTextures(1, &contactTex_);
-    glBindTexture(GL_TEXTURE_2D, contactTex_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, contactTex_, 0);
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        ARK_LOG_ERROR("Render", "PostProcess: contact shadow FBO incomplete");
     }
 
     // SSR target (half-res RGBA16F): reflected radiance + alpha mask.
     const int sw = w / 2 > 0 ? w / 2 : 1;
     const int sh = h / 2 > 0 ? h / 2 : 1;
-    glGenFramebuffers(1, &ssrFBO_);
-    glBindFramebuffer(GL_FRAMEBUFFER, ssrFBO_);
-    glGenTextures(1, &ssrColor_);
-    glBindTexture(GL_TEXTURE_2D, ssrColor_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, sw, sh, 0, GL_RGBA, GL_FLOAT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ssrColor_, 0);
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        ARK_LOG_ERROR("Render", "PostProcess: SSR FBO incomplete");
+    if (AllocRT(rtSsr_, sw, sh, RTColorFormat::RGBA16F, /*depth*/false, "SSR")) {
+        ssrFBO_   = rtSsr_->GetNativeFramebufferHandle();
+        ssrColor_ = rtSsr_->GetColorTextureHandle(0);
+    } else {
+        glGenFramebuffers(1, &ssrFBO_);
+        glBindFramebuffer(GL_FRAMEBUFFER, ssrFBO_);
+        glGenTextures(1, &ssrColor_);
+        glBindTexture(GL_TEXTURE_2D, ssrColor_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, sw, sh, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ssrColor_, 0);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            ARK_LOG_ERROR("Render", "PostProcess: SSR FBO incomplete");
+        }
     }
 
     // TAA history pair (sRGB8). Bound to the same FBO via attachment swap.
@@ -891,19 +952,48 @@ void PostProcess::AllocTargets(int w, int h) {
 }
 
 void PostProcess::ReleaseTargets() {
-    if (hdrFBO_)   { glDeleteFramebuffers(1, &hdrFBO_); hdrFBO_ = 0; }
-    if (hdrColor_) { glDeleteTextures(1, &hdrColor_);   hdrColor_ = 0; }
-    if (hdrDepth_) { glDeleteTextures(1, &hdrDepth_);   hdrDepth_ = 0; }
-    for (int i = 0; i < 2; ++i) {
-        if (bloomFBO_[i])   { glDeleteFramebuffers(1, &bloomFBO_[i]);   bloomFBO_[i] = 0; }
-        if (bloomColor_[i]) { glDeleteTextures(1, &bloomColor_[i]);     bloomColor_[i] = 0; }
-        if (ssaoFBO_[i])    { glDeleteFramebuffers(1, &ssaoFBO_[i]);    ssaoFBO_[i] = 0; }
-        if (ssaoColor_[i])  { glDeleteTextures(1, &ssaoColor_[i]);      ssaoColor_[i] = 0; }
+    // Migrated: RT destructor releases GL state. We just zero the cached
+    // raw handles so downstream sites that still bind via them no-op or
+    // re-alloc on the next AllocTargets call. Only call glDelete* when the
+    // RT slot is empty (i.e. the raw fallback path was taken).
+    if (rtHdr_) {
+        rtHdr_.reset();
+        hdrFBO_ = hdrColor_ = hdrDepth_ = 0;
+    } else {
+        if (hdrFBO_)   { glDeleteFramebuffers(1, &hdrFBO_); hdrFBO_ = 0; }
+        if (hdrColor_) { glDeleteTextures(1, &hdrColor_);   hdrColor_ = 0; }
+        if (hdrDepth_) { glDeleteTextures(1, &hdrDepth_);   hdrDepth_ = 0; }
     }
-    if (contactFBO_) { glDeleteFramebuffers(1, &contactFBO_); contactFBO_ = 0; }
-    if (contactTex_) { glDeleteTextures(1, &contactTex_);     contactTex_ = 0; }
-    if (ssrFBO_)     { glDeleteFramebuffers(1, &ssrFBO_);     ssrFBO_ = 0; }
-    if (ssrColor_)   { glDeleteTextures(1, &ssrColor_);       ssrColor_ = 0; }
+    for (int i = 0; i < 2; ++i) {
+        if (rtBloom_[i]) {
+            rtBloom_[i].reset();
+            bloomFBO_[i] = bloomColor_[i] = 0;
+        } else {
+            if (bloomFBO_[i])   { glDeleteFramebuffers(1, &bloomFBO_[i]);   bloomFBO_[i] = 0; }
+            if (bloomColor_[i]) { glDeleteTextures(1, &bloomColor_[i]);     bloomColor_[i] = 0; }
+        }
+        if (rtSsao_[i]) {
+            rtSsao_[i].reset();
+            ssaoFBO_[i] = ssaoColor_[i] = 0;
+        } else {
+            if (ssaoFBO_[i])    { glDeleteFramebuffers(1, &ssaoFBO_[i]);    ssaoFBO_[i] = 0; }
+            if (ssaoColor_[i])  { glDeleteTextures(1, &ssaoColor_[i]);      ssaoColor_[i] = 0; }
+        }
+    }
+    if (rtContact_) {
+        rtContact_.reset();
+        contactFBO_ = contactTex_ = 0;
+    } else {
+        if (contactFBO_) { glDeleteFramebuffers(1, &contactFBO_); contactFBO_ = 0; }
+        if (contactTex_) { glDeleteTextures(1, &contactTex_);     contactTex_ = 0; }
+    }
+    if (rtSsr_) {
+        rtSsr_.reset();
+        ssrFBO_ = ssrColor_ = 0;
+    } else {
+        if (ssrFBO_)     { glDeleteFramebuffers(1, &ssrFBO_);     ssrFBO_ = 0; }
+        if (ssrColor_)   { glDeleteTextures(1, &ssrColor_);       ssrColor_ = 0; }
+    }
     if (taaFBO_)        { glDeleteFramebuffers(1, &taaFBO_);   taaFBO_ = 0; }
     if (taaHistory_[0]) { glDeleteTextures(1, &taaHistory_[0]); taaHistory_[0] = 0; }
     if (taaHistory_[1]) { glDeleteTextures(1, &taaHistory_[1]); taaHistory_[1] = 0; }
@@ -924,6 +1014,53 @@ void PostProcess::ResizeIfNeeded(int w, int h) {
     AllocTargets(w, h);
     ARK_LOG_INFO("Render",
         "PostProcess resized to " + std::to_string(w) + "x" + std::to_string(h));
+}
+
+// ---------- Stage E: external HDR ingest -----------------------------------
+// Used by the deferred pipeline: the lighting pass writes linear HDR into
+// `lit_`, and we blit it into our internal hdrColor_ so Apply() can run
+// bloom/exposure/ACES/FXAA against it. When `srcDepthTex` is non-zero we
+// also blit it into hdrDepth_ so the depth-aware effects (SSAO/SSR/Fog/
+// Contact/TAA) work in the same Apply pass.
+void PostProcess::IngestHDRColor(uint32_t srcColorTex, int srcW, int srcH,
+                                 uint32_t srcDepthTex) {
+    if (!srcColorTex || srcW <= 0 || srcH <= 0) return;
+    ResizeIfNeeded(srcW, srcH);
+    if (hdrFBO_ == 0) AllocTargets(srcW, srcH);
+    if (hdrFBO_ == 0) return;  // alloc failed
+
+    GLint prevReadFBO = 0, prevDrawFBO = 0;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevReadFBO);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevDrawFBO);
+
+    if (!ingestTmpFBO_) {
+        glGenFramebuffers(1, &ingestTmpFBO_);
+    }
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, ingestTmpFBO_);
+    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, srcColorTex, 0);
+    if (srcDepthTex) {
+        glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                               GL_TEXTURE_2D, srcDepthTex, 0);
+    } else {
+        // Detach any prior depth so the FBO doesn't keep a stale reference.
+        glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                               GL_TEXTURE_2D, 0, 0);
+    }
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, hdrFBO_);
+    GLenum drawBuf = GL_COLOR_ATTACHMENT0;
+    glDrawBuffers(1, &drawBuf);
+
+    GLbitfield mask = GL_COLOR_BUFFER_BIT;
+    if (srcDepthTex) mask |= GL_DEPTH_BUFFER_BIT;
+    glBlitFramebuffer(0, 0, srcW, srcH,
+                      0, 0, srcW, srcH,
+                      mask, GL_NEAREST);
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(prevReadFBO));
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(prevDrawFBO));
 }
 
 // ---------- TAA (motion-driven, neighborhood clamp) ------------------------

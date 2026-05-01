@@ -27,6 +27,22 @@ enum class CompressedFormat {
     BC7_RGBA_sRGB, // BPTC, sRGB (Bistro base-color)
 };
 
+/// GPU-side typed format for empty/render-target textures (UploadEmpty).
+/// Mirrors `RTColorFormat` plus depth variants; kept separate so RHITexture
+/// can be used standalone (e.g. as a G-buffer texture sampled later by a
+/// fullscreen pass) without dragging in the render-target abstraction.
+enum class TextureColorFormat {
+    RGBA8_UNorm,
+    RGBA8_sRGB,
+    RGBA16F,
+    RG16F,
+    R16F,
+    R32F,
+    R8_UNorm,
+    Depth24,
+    Depth32F,
+};
+
 class RHITexture {
 public:
     virtual ~RHITexture() = default;
@@ -39,6 +55,12 @@ public:
     virtual bool UploadCompressed(int width, int height, CompressedFormat format,
                                   const uint8_t* data, size_t dataSize,
                                   int mipCount) = 0;
+
+    /// Allocate immutable storage with no source data — for textures that
+    /// will be written by a render pass (G-buffer slots, history buffers,
+    /// etc). Filtering defaults to LINEAR/CLAMP. Replaces any previously
+    /// uploaded data; safe to call repeatedly to resize.
+    virtual void UploadEmpty(int width, int height, TextureColorFormat format) = 0;
 
     virtual void Bind(int unit = 0) const = 0;
     virtual int GetWidth() const = 0;

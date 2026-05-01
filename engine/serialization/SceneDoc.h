@@ -57,6 +57,55 @@ public:
     static std::string Dump(AScene* scene);
     static bool        LoadFromString(std::string_view text, AScene* scene,
                                       std::string* errorMsg = nullptr);
+
+    // -------------------------------------------------------------------
+    // v0.3 ModSpec §5 — addon scene overlay.
+    //
+    // Layout (one file per addon mod, conventionally
+    // `<mod_root>/scene.overlay.toml`):
+    //
+    //   [overlay]
+    //   schema_version = 1
+    //   name = "..."                # optional, debug only
+    //
+    //   # Patch fields on an existing component of an existing object.
+    //   [[overrides]]
+    //   target_guid    = "..."
+    //   component_type = "Light"
+    //   intensity      = 12.0
+    //   color          = [1.0, 0.4, 0.1]
+    //
+    //   # Remove an object (and its components) by guid.
+    //   [[deletions]]
+    //   target_guid = "..."
+    //
+    //   # Add a brand-new object — same fields as [[objects]] in the
+    //   # base scene file.
+    //   [[additions]]
+    //   guid   = "..."
+    //   name   = "extra_lamp"
+    //   parent = ""
+    //   [additions.transform]
+    //   position = [0.0, 1.0, 0.0]
+    //   ...
+    //
+    //   # Attach a new component to an existing object.
+    //   [[components_attached]]
+    //   target_guid = "..."
+    //   type        = "Light"
+    //   intensity   = 8.0
+    //
+    // Order of application:
+    //   deletions → overrides → components_attached → additions
+    // (deletions first so a later addition can re-use a freed name; additions
+    // last so they can target newly-written guids in subsequent overlays.)
+    //
+    // Overlay does NOT replace the base scene; it patches an already-loaded
+    // AScene in place. Callers usually load the base scene first via Load(),
+    // then ApplyOverlay() per enabled addon mod.
+    static bool ApplyOverlay(const std::filesystem::path& path, AScene* scene);
+    static bool ApplyOverlayFromString(std::string_view text, AScene* scene,
+                                       std::string* errorMsg = nullptr);
 };
 
 } // namespace ark
